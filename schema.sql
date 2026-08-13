@@ -13,6 +13,7 @@ CREATE TABLE reminders (
 
   -- repeating-only fields
   interval_minutes   INTEGER,                   -- e.g. 180 for every 3 hours
+  schedule_text      TEXT,                      -- natural-language schedule, e.g. 'every week'
   active_hours_start INTEGER,                   -- 0-23, inclusive window start
   active_hours_end   INTEGER,                   -- 0-24, exclusive window end
   timezone           TEXT DEFAULT 'UTC',         -- IANA tz, e.g. 'America/New_York'

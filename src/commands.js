@@ -1,4 +1,9 @@
-import { isWithinActiveWindow, nextWindowStart } from "./scheduling.js";
+import {
+  isWithinActiveWindow,
+  nextWindowStart,
+  parseNaturalDateTime,
+  parseNaturalSchedule,
+} from "./scheduling.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {
@@ -10,7 +15,9 @@ function optionMap(interaction) {
 
 /** Parses "3h", "45m", "1d" style durations into minutes. */
 function parseDuration(str) {
-  const match = /^(\d+)\s*(m|min|mins|h|hr|hrs|hour|hours|d|day|days)$/i.exec(str.trim());
+  const match = /^\s*(\d+)\s*(m|min|mins|h|hr|hrs|hour|hours|d|day|days)\s*$/i.exec(
+    String(str || "").trim()
+  );
   if (!match) return null;
   const n = Number(match[1]);
   const unit = match[2].toLowerCase();
@@ -33,14 +40,19 @@ function parseActiveHours(str) {
     }
     return ((h % 24) + 24) % 24;
   };
-  return { start: parseHour(a), end: b === "24" || /12am$/i.test(b) && a !== b ? (b.match(/^24$/) ? 24 : parseHour(b)) : parseHour(b) };
+  return {
+    start: parseHour(a),
+    end: b === "24" || (/12am$/i.test(b) && a !== b) ? (b.match(/^24$/) ? 24 : parseHour(b)) : parseHour(b),
+  };
 }
 
 export async function handleRemindOnce(interaction, env) {
   const opts = optionMap(interaction);
-  const fireAt = new Date(opts.time); // expects ISO-ish input; validate below
-  if (isNaN(fireAt.getTime())) {
-    return { error: "Couldn't parse that time. Try an ISO format like `2026-08-14T15:00:00Z`." };
+  const fireAt = parseNaturalDateTime(opts.time, new Date());
+  if (!fireAt) {
+    return {
+      error: "Couldn't parse that time. Try a date like `2026-08-14T15:00:00Z` or a natural phrase like `tomorrow at 9pm`.",
+    };
   }
 
   const id = crypto.randomUUID();
@@ -68,9 +80,17 @@ export async function handleRemindOnce(interaction, env) {
 
 export async function handleRemindRepeat(interaction, env) {
   const opts = optionMap(interaction);
-  const intervalMinutes = parseDuration(opts.every);
-  if (!intervalMinutes) {
-    return { error: "Couldn't parse the interval. Try something like `3h`, `45m`, or `1d`." };
+  const scheduleText = String(opts.every || "").trim();
+  const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
+  const intervalMinutes =
+    parsedSchedule && parsedSchedule.kind === "interval"
+      ? parsedSchedule.intervalMinutes
+      : parseDuration(scheduleText);
+
+  if (!parsedSchedule && !intervalMinutes) {
+    return {
+      error: "Couldn't parse the schedule. Try something like `every week`, `first monday each month`, `every friday at 20`, `3h`, `45m`, or `1d`.",
+    };
   }
 
   let activeStart = null;
@@ -89,6 +109,8 @@ export async function handleRemindRepeat(interaction, env) {
     active_hours_start: activeStart,
     active_hours_end: activeEnd,
     timezone,
+    schedule_text: parsedSchedule ? scheduleText : null,
+    interval_minutes: intervalMinutes,
   };
   const nextEligible = isWithinActiveWindow(draftReminder, now)
     ? now
@@ -97,9 +119,9 @@ export async function handleRemindRepeat(interaction, env) {
   await env.DB.prepare(
     `INSERT INTO reminders
      (id, guild_id, channel_id, created_by, type, title, message, ping_role_id,
-      interval_minutes, active_hours_start, active_hours_end, timezone,
+      interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
       next_eligible_at, enabled)
-     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
   )
     .bind(
       id,
@@ -110,6 +132,7 @@ export async function handleRemindRepeat(interaction, env) {
       opts.message,
       opts.role || null,
       intervalMinutes,
+      parsedSchedule ? scheduleText : null,
       activeStart,
       activeEnd,
       timezone,
@@ -120,13 +143,13 @@ export async function handleRemindRepeat(interaction, env) {
   const windowText =
     activeStart != null ? ` (active ${activeStart}:00-${activeEnd}:00 ${timezone})` : "";
   return {
-    success: `Repeating reminder set: every ${opts.every}${windowText}. ID: \`${id}\``,
+    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${id}\``,
   };
 }
 
 export async function handleRemindList(interaction, env) {
   const { results } = await env.DB.prepare(
-    `SELECT id, type, title, interval_minutes, fire_at, active_hours_start, active_hours_end, timezone
+    `SELECT id, type, title, interval_minutes, schedule_text, fire_at, active_hours_start, active_hours_end, timezone
      FROM reminders WHERE guild_id = ? AND enabled = 1 ORDER BY rowid DESC LIMIT 20`
   )
     .bind(interaction.guild_id)
@@ -138,11 +161,12 @@ export async function handleRemindList(interaction, env) {
     if (r.type === "once") {
       return `\`${r.id.slice(0, 8)}\` **${r.title}** — once at ${r.fire_at}`;
     }
+    const schedule = r.schedule_text || `every ${r.interval_minutes}m`;
     const window =
       r.active_hours_start != null
         ? ` (active ${r.active_hours_start}:00-${r.active_hours_end}:00 ${r.timezone})`
         : "";
-    return `\`${r.id.slice(0, 8)}\` **${r.title}** — every ${r.interval_minutes}m${window}`;
+    return `\`${r.id.slice(0, 8)}\` **${r.title}** — ${schedule}${window}`;
   });
 
   return { success: lines.join("\n") };
