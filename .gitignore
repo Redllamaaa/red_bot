@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# local D1 sqlite files (if generated outside .wrangler)
+*.sqlite
+*.sqlite3
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+
+# env
+.env
+.env.local
