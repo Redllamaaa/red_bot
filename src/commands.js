@@ -166,7 +166,7 @@ export async function handleRemindRepeat(interaction, env) {
       ? ` (active ${activeStart}:00-${activeEnd}:00 ${timezone})`
       : "";
   return {
-    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${idPrefix}\``,
+    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
   };
 }
 
