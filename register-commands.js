@@ -26,15 +26,31 @@ const commands = [
         name: "once",
         description: "Set a one-off reminder",
         options: [
-          { type: 3, name: "message", description: "Reminder text", required: true },
+          {
+            type: 3,
+            name: "message",
+            description: "Reminder text",
+            required: true,
+          },
           {
             type: 3,
             name: "time",
-            description: "When to fire, e.g. 2026-08-14T15:00:00Z or tomorrow at 9pm",
+            description:
+              "When to fire, e.g. 2026-08-14T15:00:00Z or tomorrow at 9pm",
             required: true,
           },
-          { type: 3, name: "title", description: "Embed title (default: Reminder)", required: false },
-          { type: 8, name: "role",   description: "Role to ping (defaults to you if omitted)", required: false },
+          {
+            type: 3,
+            name: "title",
+            description: "Embed title (default: Reminder)",
+            required: false,
+          },
+          {
+            type: 8,
+            name: "role",
+            description: "Role to ping (defaults to you if omitted)",
+            required: false,
+          },
         ],
       },
       {
@@ -42,11 +58,17 @@ const commands = [
         name: "repeat",
         description: "Set a recurring reminder",
         options: [
-          { type: 3, name: "message", description: "Reminder text", required: true },
+          {
+            type: 3,
+            name: "message",
+            description: "Reminder text",
+            required: true,
+          },
           {
             type: 3,
             name: "every",
-            description: "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
+            description:
+              "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
             required: true,
           },
           {
@@ -58,11 +80,22 @@ const commands = [
           {
             type: 3,
             name: "timezone",
-            description: "IANA timezone for the active window, e.g. America/New_York",
+            description:
+              "IANA timezone for the active window, e.g. America/New_York",
             required: false,
           },
-          { type: 3, name: "title", description: "Embed title (default: Reminder)", required: false },
-          { type: 8, name: "role", description: "Role to ping (defaults to you if omitted)", required: false },
+          {
+            type: 3,
+            name: "title",
+            description: "Embed title (default: Reminder)",
+            required: false,
+          },
+          {
+            type: 8,
+            name: "role",
+            description: "Role to ping (defaults to you if omitted)",
+            required: false,
+          },
         ],
       },
       {
@@ -75,21 +108,24 @@ const commands = [
         name: "delete",
         description: "Delete a reminder by ID",
         options: [
-          { type: 3, name: "id", description: "Reminder ID (or prefix)", required: true },
+          { type: 3, name: "id", description: "Reminder ID", required: true },
         ],
       },
     ],
   },
 ];
 
-const res = await fetch(`https://discord.com/api/v10/applications/${APPLICATION_ID}/commands`, {
-  method: "PUT",
-  headers: {
-    Authorization: `Bot ${TOKEN}`,
-    "Content-Type": "application/json",
+const res = await fetch(
+  `https://discord.com/api/v10/applications/${APPLICATION_ID}/commands`,
+  {
+    method: "PUT",
+    headers: {
+      Authorization: `Bot ${TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(commands),
   },
-  body: JSON.stringify(commands),
-});
+);
 
 if (!res.ok) {
   console.error(`Failed: ${res.status} ${await res.text()}`);

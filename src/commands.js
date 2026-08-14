@@ -99,6 +99,7 @@ export async function handleRemindRepeat(interaction, env) {
   }
 
   const opts = optionMap(interaction);
+  const idPrefix = opts.id;
   const scheduleText = String(opts.every || "").trim();
   const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
   const intervalMinutes =
@@ -165,7 +166,7 @@ export async function handleRemindRepeat(interaction, env) {
       ? ` (active ${activeStart}:00-${activeEnd}:00 ${timezone})`
       : "";
   return {
-    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${id}\``,
+    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${idPrefix}\``,
   };
 }
 
