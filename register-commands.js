@@ -34,7 +34,7 @@ const commands = [
             required: true,
           },
           { type: 3, name: "title", description: "Embed title (default: Reminder)", required: false },
-          { type: 8, name: "role", description: "Role to ping", required: false },
+          { type: 8, name: "role",   description: "Role to ping (defaults to you if omitted)", required: false },
         ],
       },
       {
@@ -62,7 +62,7 @@ const commands = [
             required: false,
           },
           { type: 3, name: "title", description: "Embed title (default: Reminder)", required: false },
-          { type: 8, name: "role", description: "Role to ping", required: false },
+          { type: 8, name: "role", description: "Role to ping (defaults to you if omitted)", required: false },
         ],
       },
       {

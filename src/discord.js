@@ -24,6 +24,16 @@ export async function verifyDiscordRequest(request, publicKey) {
  * the bot token. Used by the scheduled worker to fire reminders.
  */
 export async function sendReminderMessage(env, reminder) {
+  const hasRole = Boolean(reminder.ping_role_id);
+
+  const content = hasRole
+    ? `<@&${reminder.ping_role_id}>`
+    : `<@${reminder.created_by}>`;
+
+  const allowed_mentions = hasRole
+    ? { roles: [reminder.ping_role_id] }
+    : { users: [reminder.created_by] };
+
   const res = await fetch(
     `https://discord.com/api/v10/channels/${reminder.channel_id}/messages`,
     {
@@ -33,16 +43,19 @@ export async function sendReminderMessage(env, reminder) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        content: reminder.ping_role_id ? `<@&${reminder.ping_role_id}>` : undefined,
-        allowed_mentions: reminder.ping_role_id
-          ? { roles: [reminder.ping_role_id] }
-          : undefined,
+        content,
+        allowed_mentions,
         embeds: [
           {
             title: reminder.title,
             description: reminder.message,
             color: 0x3498db,
-            footer: { text: reminder.type === "once" ? "One-off reminder" : "Recurring reminder" },
+            footer: {
+              text:
+                reminder.type === "once"
+                  ? "One-off reminder"
+                  : "Recurring reminder",
+            },
           },
         ],
       }),
@@ -50,9 +63,14 @@ export async function sendReminderMessage(env, reminder) {
   );
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Discord API error ${res.status}: ${text}`);
+    const error = await res.text();
+
+    throw new Error(
+      `Failed to send reminder message (${res.status}): ${error}`
+    );
   }
+
+  return res.json();
 }
 
 /** Thin wrapper for responding to an interaction synchronously. */
