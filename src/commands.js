@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import { commandRegistry } from "./commandRegistry.js";
 import {
   isWithinActiveWindow,
   nextWindowStart,
@@ -54,7 +55,99 @@ function parseActiveHours(str) {
 }
 
 function hasRole(interaction, roleId) {
-  return Boolean(roleId && interaction.member?.roles?.includes(roleId));
+  if (!roleId) return false;
+  const roles = interaction.member?.roles;
+  if (!roles) return false;
+  // discord.js gateway/API interactions: GuildMemberRoleManager (has .cache)
+  if (roles.cache) return roles.cache.has(roleId);
+  // raw REST-style payload: plain array of role IDs
+  if (Array.isArray(roles)) return roles.includes(roleId);
+  return false;
+}
+
+export async function handleRemindCommand(interaction) {
+  if (!hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID)) {
+    return {
+      error: "You don't have permission to create repeating reminders.",
+    };
+  }
+
+  const opts = optionMap(interaction);
+  const commandName = opts.command;
+  if (!commandRegistry[commandName]) {
+    return { error: `Unknown command \`${commandName}\`.` };
+  }
+
+  const scheduleText = String(opts.every || "").trim();
+  const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
+  const intervalMinutes =
+    parsedSchedule && parsedSchedule.kind === "interval"
+      ? parsedSchedule.intervalMinutes
+      : parseDuration(scheduleText);
+
+  if (!parsedSchedule && !intervalMinutes) {
+    return {
+      error:
+        "Couldn't parse the schedule. Try something like `every week`, `first monday each month`, `every friday at 20`, `3h`, `45m`, or `1d`.",
+    };
+  }
+
+  let activeStart = null;
+  let activeEnd = null;
+  if (opts.active) {
+    const parsed = parseActiveHours(opts.active);
+    activeStart = parsed.start;
+    activeEnd = parsed.end;
+  }
+
+  const id = crypto.randomUUID();
+  const timezone = opts.timezone || "UTC";
+  const now = new Date();
+
+  const draftReminder = {
+    active_hours_start: activeStart,
+    active_hours_end: activeEnd,
+    timezone,
+    schedule_text: parsedSchedule ? scheduleText : null,
+    interval_minutes: intervalMinutes,
+  };
+  const nextEligible = isWithinActiveWindow(draftReminder, now)
+    ? now
+    : nextWindowStart(draftReminder, now);
+
+  await db
+    .prepare(
+      `INSERT INTO reminders
+     (id, guild_id, channel_id, created_by, type, title, message, command_name, ping_role_id,
+      interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
+      next_eligible_at, enabled)
+     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+    )
+    .bind(
+      id,
+      interaction.guild_id,
+      interaction.channel_id,
+      interaction.member?.user?.id || interaction.user?.id,
+      opts.title || commandName,
+      "", // message stays NOT NULL-safe; command_name drives the content instead
+      commandName,
+      opts.role || null,
+      intervalMinutes,
+      parsedSchedule ? scheduleText : null,
+      activeStart,
+      activeEnd,
+      timezone,
+      nextEligible.toISOString(),
+    )
+    .run();
+
+  const windowText =
+    activeStart != null
+      ? ` (active ${activeStart}:00-${activeEnd}:00 ${timezone})`
+      : "";
+  return {
+    success: `Repeating command reminder set: \`${commandName}\` ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
+  };
 }
 
 export async function handleRemindOnce(interaction) {
@@ -175,7 +268,7 @@ export async function handleRemindRepeat(interaction) {
 export async function handleRemindList(interaction) {
   const { results } = await db
     .prepare(
-      `SELECT id, type, title, interval_minutes, schedule_text, fire_at, active_hours_start, active_hours_end, timezone
+      `SELECT id, type, title, command_name, interval_minutes, schedule_text, fire_at, active_hours_start, active_hours_end, timezone
      FROM reminders WHERE guild_id = ? AND enabled = 1 ORDER BY rowid DESC LIMIT 20`,
     )
     .bind(interaction.guild_id)
@@ -193,7 +286,8 @@ export async function handleRemindList(interaction) {
       r.active_hours_start != null
         ? ` (active ${r.active_hours_start}:00-${r.active_hours_end}:00 ${r.timezone})`
         : "";
-    return `\`${r.id.slice(0, 8)}\` **${r.title}** — ${schedule}${window}`;
+    const suffix = r.command_name ? ` [runs \`${r.command_name}\`]` : "";
+    return `\`${r.id.slice(0, 8)}\` **${r.title}** — ${schedule}${window}${suffix}`;
   });
 
   return { success: lines.join("\n") };
@@ -222,4 +316,22 @@ export async function handleRemindDelete(interaction) {
     .run();
 
   return { success: `Reminder \`${idPrefix}\` deleted.` };
+}
+
+export async function handleCompliment() {
+  try {
+    const res = await fetch("https://my-fun-api.onrender.com/compliment");
+    if (!res.ok) {
+      return {
+        error: "Couldn't fetch a compliment right now, try again in a bit!",
+      };
+    }
+    const data = await res.json();
+    return { success: data.data.compliment };
+  } catch (err) {
+    console.error("Compliment fetch failed:", err.message);
+    return {
+      error: "Couldn't fetch a compliment right now, try again in a bit!",
+    };
+  }
 }

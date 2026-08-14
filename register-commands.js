@@ -8,6 +8,8 @@
  * /applications/{app_id}/guilds/{guild_id}/commands).
  */
 
+import { commandChoices } from "./src/commandRegistry.js"; // adjust path to match your project layout
+
 const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID;
 const TOKEN = process.env.DISCORD_TOKEN;
 
@@ -17,6 +19,10 @@ if (!APPLICATION_ID || !TOKEN) {
 }
 
 const commands = [
+  {
+    name: "compliment",
+    description: "Get a random compliment",
+  },
   {
     name: "remind",
     description: "Manage reminders",
@@ -88,6 +94,52 @@ const commands = [
             type: 3,
             name: "title",
             description: "Embed title (default: Reminder)",
+            required: false,
+          },
+          {
+            type: 8,
+            name: "role",
+            description: "Role to ping (defaults to you if omitted)",
+            required: false,
+          },
+        ],
+      },
+      {
+        type: 1,
+        name: "command",
+        description: "Run a registered command on a repeating schedule",
+        options: [
+          {
+            type: 3,
+            name: "command",
+            description: "Which command to run",
+            required: true,
+            choices: commandChoices, // compliment, fortune, funfact, etc.
+          },
+          {
+            type: 3,
+            name: "every",
+            description:
+              "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
+            required: true,
+          },
+          {
+            type: 3,
+            name: "active",
+            description: "Active hour window, e.g. 8-24 (blocks 12am-8am)",
+            required: false,
+          },
+          {
+            type: 3,
+            name: "timezone",
+            description:
+              "IANA timezone for the active window, e.g. America/New_York",
+            required: false,
+          },
+          {
+            type: 3,
+            name: "title",
+            description: "Embed title (default: the command name)",
             required: false,
           },
           {

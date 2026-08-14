@@ -1,78 +1,47 @@
-import { verifyKey } from "discord-interactions";
+import { commandRegistry } from "./commandRegistry.js";
 
 /**
- * Verifies a Discord interaction request's Ed25519 signature.
+ * Sends a message (with optional embed + role ping) to a channel using discord.js.
  */
-export async function verifyDiscordRequest(request, publicKey) {
-  const signature = request.headers.get("X-Signature-Ed25519");
-  const timestamp = request.headers.get("X-Signature-Timestamp");
-  const body = await request.text();
+export async function sendReminderMessage(client, reminder) {
+  const channel = await client.channels.fetch(reminder.channel_id);
+  if (!channel) {
+    throw new Error(`Channel ${reminder.channel_id} not found.`);
+  }
 
-  const isValid =
-    signature &&
-    timestamp &&
-    (await verifyKey(body, signature, timestamp, publicKey));
+  let description = reminder.message;
+  if (reminder.command_name) {
+    try {
+      description = await commandRegistry[reminder.command_name]();
+    } catch (err) {
+      console.error(`Command "${reminder.command_name}" failed:`, err.message);
+      description = `Couldn't run \`${reminder.command_name}\` this time.`;
+    }
+  }
 
-  if (!isValid) return { isValid: false };
-  return { isValid: true, body: JSON.parse(body) };
-}
-
-/**
- * Sends a message (with optional embed + role ping) to a channel using
- * the bot token.
- */
-export async function sendReminderMessage(reminder) {
   const hasRole = Boolean(reminder.ping_role_id);
-
   const content = hasRole
     ? `<@&${reminder.ping_role_id}>`
     : `<@${reminder.created_by}>`;
-
-  const allowed_mentions = hasRole
+  const allowedMentions = hasRole
     ? { roles: [reminder.ping_role_id] }
     : { users: [reminder.created_by] };
 
-  const res = await fetch(
-    `https://discord.com/api/v10/channels/${reminder.channel_id}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
-        "Content-Type": "application/json",
+  await channel.send({
+    content,
+    allowedMentions,
+    embeds: [
+      {
+        title: reminder.title,
+        description,
+        color: 0x3498db,
+        footer: {
+          text:
+            reminder.type === "once"
+              ? "One-off reminder"
+              : "Recurring reminder",
+        },
       },
-      body: JSON.stringify({
-        content,
-        allowed_mentions,
-        embeds: [
-          {
-            title: reminder.title,
-            description: reminder.message,
-            color: 0x3498db,
-            footer: {
-              text:
-                reminder.type === "once"
-                  ? "One-off reminder"
-                  : "Recurring reminder",
-            },
-          },
-        ],
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(
-      `Failed to send reminder message (${res.status}): ${error}`,
-    );
-  }
-
-  return res.json();
-}
-
-/** Thin wrapper for responding to an interaction synchronously. */
-export function jsonResponse(body) {
-  return new Response(JSON.stringify(body), {
-    headers: { "Content-Type": "application/json" },
+    ],
   });
 }

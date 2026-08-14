@@ -1,11 +1,6 @@
-import http from "node:http";
-import { InteractionType, InteractionResponseType } from "discord-interactions";
+import { Client, GatewayIntentBits } from "discord.js";
 import { db } from "./db.js";
-import {
-  verifyDiscordRequest,
-  jsonResponse,
-  sendReminderMessage,
-} from "./discord.js";
+import { sendReminderMessage } from "./discord.js";
 import {
   isWithinActiveWindow,
   nextWindowStart,
@@ -16,9 +11,13 @@ import {
   handleRemindRepeat,
   handleRemindList,
   handleRemindDelete,
+  handleRemindCommand,
+  handleCompliment,
 } from "./commands.js";
 
-const PORT = process.env.PORT || 25953;
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
 
 function createEmbed({ title, description, color = 0x5865f2 }) {
   return {
@@ -32,70 +31,69 @@ function createEmbed({ title, description, color = 0x5865f2 }) {
   };
 }
 
-/**
- * Main Webhook Handler
- */
-async function handleWebhook(req, res) {
-  if (req.method !== "POST") {
-    res.writeHead(405, { "Content-Type": "text/plain" });
-    return res.end("Expected POST");
+// Convert discord.js Interaction to match commands.js expected format
+function adaptInteraction(interaction) {
+  const subOption = interaction.options.data[0];
+  return {
+    guild_id: interaction.guildId,
+    channel_id: interaction.channelId,
+    user: interaction.user,
+    member: interaction.member,
+    data: {
+      options: subOption?.options || [],
+    },
+  };
+}
+
+client.once("clientReady", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}!`);
+
+  // Run initial reminder check on boot, then every 60 seconds
+  processDueReminders();
+  setInterval(processDueReminders, 60000);
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "compliment") {
+    await interaction.deferReply();
+    const result = await handleCompliment();
+    const isError = Boolean(result.error);
+
+    await interaction.editReply({
+      ...createEmbed({
+        title: isError ? "Error" : "Compliment",
+        description: result.success || result.error,
+        color: isError ? 0xed4245 : 0x9d00ff,
+      }),
+    });
+    return;
   }
 
-  // Convert Node.js request to Web Fetch API Request for verifyDiscordRequest
-  const buffers = [];
-  for await (const chunk of req) buffers.push(chunk);
-  const rawBody = Buffer.concat(buffers).toString("utf-8");
-
-  const webRequest = new Request("http://localhost", {
-    method: "POST",
-    headers: req.headers,
-    body: rawBody,
-  });
-
-  const { isValid, body: interaction } = await verifyDiscordRequest(
-    webRequest,
-    process.env.DISCORD_PUBLIC_KEY,
-  );
-
-  if (!isValid) {
-    res.writeHead(401, { "Content-Type": "text/plain" });
-    return res.end("Bad request signature");
-  }
-
-  if (interaction.type === InteractionType.PING) {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify({ type: InteractionResponseType.PONG }));
-  }
-
-  if (interaction.type === InteractionType.APPLICATION_COMMAND) {
-    const name = interaction.data.name;
-    const sub = interaction.data.options?.[0]?.name;
-
+  if (interaction.commandName === "remind") {
+    const sub = interaction.options.getSubcommand();
     let result;
     let embedTitle = "Reminder";
 
+    const adapted = adaptInteraction(interaction);
+
     try {
-      if (name === "remind" && sub === "once") {
+      if (sub === "once") {
         embedTitle = "Reminder Set";
-        result = await handleRemindOnce({
-          ...interaction,
-          data: interaction.data.options[0],
-        });
-      } else if (name === "remind" && sub === "repeat") {
+        result = await handleRemindOnce(adapted);
+      } else if (sub === "repeat") {
         embedTitle = "Repeating Reminder Set";
-        result = await handleRemindRepeat({
-          ...interaction,
-          data: interaction.data.options[0],
-        });
-      } else if (name === "remind" && sub === "list") {
+        result = await handleRemindRepeat(adapted);
+      } else if (sub === "command") {
+        embedTitle = "Recurring Command Reminder Set";
+        result = await handleRemindCommand(adapted);
+      } else if (sub === "list") {
         embedTitle = "Active Reminders";
-        result = await handleRemindList(interaction);
-      } else if (name === "remind" && sub === "delete") {
+        result = await handleRemindList(adapted);
+      } else if (sub === "delete") {
         embedTitle = "Reminder Deleted";
-        result = await handleRemindDelete({
-          ...interaction,
-          data: interaction.data.options[0],
-        });
+        result = await handleRemindDelete(adapted);
       } else {
         result = { error: "Unknown command." };
       }
@@ -105,28 +103,20 @@ async function handleWebhook(req, res) {
     }
 
     const isError = Boolean(result.error);
-    const responsePayload = {
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: {
-        ...createEmbed({
-          title: isError ? "Error" : embedTitle,
-          description: result.success || result.error,
-          color: isError ? 0xed4245 : 0x5865f2,
-        }),
-        flags: isError ? 64 : 0,
-      },
-    };
 
-    res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify(responsePayload));
+    await interaction.reply({
+      ...createEmbed({
+        title: isError ? "Error" : embedTitle,
+        description: result.success || result.error,
+        color: isError ? 0xed4245 : 0x5865f2,
+      }),
+      ephemeral: isError,
+    });
   }
-
-  res.writeHead(400, { "Content-Type": "text/plain" });
-  res.end("Unhandled interaction type");
-}
+});
 
 /**
- * Background Cron Job Replacement
+ * Background Cron Job
  */
 async function processDueReminders() {
   const now = new Date();
@@ -154,7 +144,7 @@ async function processDueReminders() {
           continue;
         }
 
-        await sendReminderMessage(reminder);
+        await sendReminderMessage(client, reminder);
 
         if (reminder.type === "once") {
           await db
@@ -184,21 +174,4 @@ async function processDueReminders() {
   }
 }
 
-// Start Server
-const server = http.createServer((req, res) => {
-  handleWebhook(req, res).catch((err) => {
-    console.error("Unhandled server error:", err);
-    if (!res.headersSent) {
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end("Internal Server Error");
-    }
-  });
-});
-
-server.listen(PORT, () => {
-  console.log(`Bot server listening on port ${PORT}`);
-
-  // Run initial check on boot, then every 60 seconds
-  processDueReminders();
-  setInterval(processDueReminders, 60000);
-});
+client.login(process.env.DISCORD_TOKEN);
