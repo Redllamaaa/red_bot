@@ -2,8 +2,6 @@ import { verifyKey } from "discord-interactions";
 
 /**
  * Verifies a Discord interaction request's Ed25519 signature.
- * Must be called with the RAW body string (not parsed JSON), or
- * verification will fail.
  */
 export async function verifyDiscordRequest(request, publicKey) {
   const signature = request.headers.get("X-Signature-Ed25519");
@@ -21,9 +19,9 @@ export async function verifyDiscordRequest(request, publicKey) {
 
 /**
  * Sends a message (with optional embed + role ping) to a channel using
- * the bot token. Used by the scheduled worker to fire reminders.
+ * the bot token.
  */
-export async function sendReminderMessage(env, reminder) {
+export async function sendReminderMessage(reminder) {
   const hasRole = Boolean(reminder.ping_role_id);
 
   const content = hasRole
@@ -39,7 +37,7 @@ export async function sendReminderMessage(env, reminder) {
     {
       method: "POST",
       headers: {
-        Authorization: `Bot ${env.DISCORD_TOKEN}`,
+        Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -59,14 +57,13 @@ export async function sendReminderMessage(env, reminder) {
           },
         ],
       }),
-    }
+    },
   );
 
   if (!res.ok) {
     const error = await res.text();
-
     throw new Error(
-      `Failed to send reminder message (${res.status}): ${error}`
+      `Failed to send reminder message (${res.status}): ${error}`,
     );
   }
 

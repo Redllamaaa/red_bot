@@ -1,3 +1,4 @@
+import { db } from "./db.js";
 import {
   isWithinActiveWindow,
   nextWindowStart,
@@ -56,7 +57,7 @@ function hasRole(interaction, roleId) {
   return Boolean(roleId && interaction.member?.roles?.includes(roleId));
 }
 
-export async function handleRemindOnce(interaction, env) {
+export async function handleRemindOnce(interaction) {
   const opts = optionMap(interaction);
   const fireAt = parseNaturalDateTime(opts.time, new Date());
   if (!fireAt) {
@@ -67,12 +68,13 @@ export async function handleRemindOnce(interaction, env) {
   }
 
   const id = crypto.randomUUID();
-  await env.DB.prepare(
-    `INSERT INTO reminders
+  await db
+    .prepare(
+      `INSERT INTO reminders
      (id, guild_id, channel_id, created_by, type, title, message, ping_role_id,
       fire_at, next_eligible_at, enabled)
      VALUES (?, ?, ?, ?, 'once', ?, ?, ?, ?, ?, 1)`,
-  )
+    )
     .bind(
       id,
       interaction.guild_id,
@@ -91,15 +93,14 @@ export async function handleRemindOnce(interaction, env) {
   };
 }
 
-export async function handleRemindRepeat(interaction, env) {
-  if (!hasRole(interaction, env.REMINDER_REPEAT_ROLE_ID)) {
+export async function handleRemindRepeat(interaction) {
+  if (!hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID)) {
     return {
       error: "You don't have permission to create repeating reminders.",
     };
   }
 
   const opts = optionMap(interaction);
-  const idPrefix = opts.id;
   const scheduleText = String(opts.every || "").trim();
   const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
   const intervalMinutes =
@@ -137,13 +138,14 @@ export async function handleRemindRepeat(interaction, env) {
     ? now
     : nextWindowStart(draftReminder, now);
 
-  await env.DB.prepare(
-    `INSERT INTO reminders
+  await db
+    .prepare(
+      `INSERT INTO reminders
      (id, guild_id, channel_id, created_by, type, title, message, ping_role_id,
       interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
       next_eligible_at, enabled)
      VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-  )
+    )
     .bind(
       id,
       interaction.guild_id,
@@ -170,11 +172,12 @@ export async function handleRemindRepeat(interaction, env) {
   };
 }
 
-export async function handleRemindList(interaction, env) {
-  const { results } = await env.DB.prepare(
-    `SELECT id, type, title, interval_minutes, schedule_text, fire_at, active_hours_start, active_hours_end, timezone
+export async function handleRemindList(interaction) {
+  const { results } = await db
+    .prepare(
+      `SELECT id, type, title, interval_minutes, schedule_text, fire_at, active_hours_start, active_hours_end, timezone
      FROM reminders WHERE guild_id = ? AND enabled = 1 ORDER BY rowid DESC LIMIT 20`,
-  )
+    )
     .bind(interaction.guild_id)
     .all();
 
@@ -196,12 +199,13 @@ export async function handleRemindList(interaction, env) {
   return { success: lines.join("\n") };
 }
 
-export async function handleRemindDelete(interaction, env) {
+export async function handleRemindDelete(interaction) {
   const opts = optionMap(interaction);
   const idPrefix = opts.id;
-  const { results } = await env.DB.prepare(
-    `SELECT id FROM reminders WHERE guild_id = ? AND id LIKE ? AND enabled = 1`,
-  )
+  const { results } = await db
+    .prepare(
+      `SELECT id FROM reminders WHERE guild_id = ? AND id LIKE ? AND enabled = 1`,
+    )
     .bind(interaction.guild_id, `${idPrefix}%`)
     .all();
 
@@ -212,7 +216,8 @@ export async function handleRemindDelete(interaction, env) {
       error: `Multiple reminders match \`${idPrefix}\`, be more specific.`,
     };
 
-  await env.DB.prepare(`UPDATE reminders SET enabled = 0 WHERE id = ?`)
+  await db
+    .prepare(`UPDATE reminders SET enabled = 0 WHERE id = ?`)
     .bind(results[0].id)
     .run();
 

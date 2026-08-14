@@ -48,15 +48,27 @@ export function parseNaturalDateTime(input, now = new Date()) {
   if (!Number.isNaN(isoDate.getTime())) return isoDate;
 
   const lower = text.toLowerCase();
-  const inMatch = /^in\s+(\d+)\s*(minute|minutes|min|m|hour|hours|hr|h|day|days|d|week|weeks|wk)$/i.exec(lower);
+  const inMatch =
+    /^in\s+(\d+)\s*(minute|minutes|min|m|hour|hours|hr|h|day|days|d|week|weeks|wk)$/i.exec(
+      lower,
+    );
   if (inMatch) {
     const amount = Number(inMatch[1]);
     const unit = inMatch[2].toLowerCase();
-    const multiplier = unit.startsWith("m") ? 1 : unit.startsWith("h") ? 60 : unit.startsWith("d") ? 60 * 24 : 60 * 24 * 7;
+    const multiplier = unit.startsWith("m")
+      ? 1
+      : unit.startsWith("h")
+        ? 60
+        : unit.startsWith("d")
+          ? 60 * 24
+          : 60 * 24 * 7;
     return new Date(now.getTime() + amount * multiplier * 60000);
   }
 
-  const clockMatch = /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next monday|next tuesday|next wednesday|next thursday|next friday|next saturday|next sunday)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(lower);
+  const clockMatch =
+    /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next monday|next tuesday|next wednesday|next thursday|next friday|next saturday|next sunday)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(
+      lower,
+    );
   if (clockMatch) {
     const dayName = clockMatch[1].toLowerCase();
     const time = parseClockTime(clockMatch[2], clockMatch[3], clockMatch[4]);
@@ -110,7 +122,10 @@ export function parseNaturalDateTime(input, now = new Date()) {
 }
 
 function parseIntervalPart(input) {
-  const match = /^every\s+(\d+)\s*(minute|minutes|min|m|hour|hours|hr|h|day|days|d|week|weeks|wk|month|months|mo|year|years|yr)s?$/i.exec(input.trim());
+  const match =
+    /^every\s+(\d+)\s*(minute|minutes|min|m|hour|hours|hr|h|day|days|d|week|weeks|wk|month|months|mo|year|years|yr)s?$/i.exec(
+      input.trim(),
+    );
   if (!match) return null;
 
   const amount = Number(match[1]);
@@ -145,22 +160,43 @@ function parseIntervalPart(input) {
 }
 
 function parseWeekdaySchedule(input) {
-  const match = /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i.exec(input.trim());
+  const match =
+    /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i.exec(
+      input.trim(),
+    );
   if (!match) return null;
 
   const weekday = match[1].toLowerCase();
-  const time = parseClockTime(match[2] || "9", match[3] || "0", match[4] || null);
+  const time = parseClockTime(
+    match[2] || "9",
+    match[3] || "0",
+    match[4] || null,
+  );
   if (!time) return null;
 
   return { kind: "weekday", weekday, hour: time.hour, minute: time.minute };
 }
 
 function parseMonthlySchedule(input) {
-  const match = /^(?:the\s+)?(first|second|third|fourth|fifth|last)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(?:each\s+)?month(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i.exec(input.trim());
+  const match =
+    /^(?:the\s+)?(first|second|third|fourth|fifth|last)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(?:each\s+)?month(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i.exec(
+      input.trim(),
+    );
   if (!match) return null;
 
-  const ordinalMap = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, last: -1 };
-  const time = parseClockTime(match[3] || "9", match[4] || "0", match[5] || null);
+  const ordinalMap = {
+    first: 1,
+    second: 2,
+    third: 3,
+    fourth: 4,
+    fifth: 5,
+    last: -1,
+  };
+  const time = parseClockTime(
+    match[3] || "9",
+    match[4] || "0",
+    match[5] || null,
+  );
   if (!time) return null;
 
   return {
@@ -197,12 +233,18 @@ export function parseNaturalSchedule(input, now = new Date()) {
   const monthlySchedule = parseMonthlySchedule(text);
   if (monthlySchedule) return monthlySchedule;
 
-  const directDay = /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.exec(text);
+  const directDay =
+    /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.exec(
+      text,
+    );
   if (directDay) {
     return parseWeekdaySchedule(`every ${directDay[1]} at 9:00`);
   }
 
-  const relative = /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(text);
+  const relative =
+    /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(
+      text,
+    );
   if (relative) {
     return parseWeekdaySchedule(text);
   }
@@ -218,17 +260,23 @@ function nthWeekdayDate(year, monthIndex, weekdayName, ordinal) {
   const firstTarget = 1 + offset;
 
   if (ordinal === -1) {
-    const monthLength = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const monthLength = new Date(
+      Date.UTC(year, monthIndex + 1, 0),
+    ).getUTCDate();
     const lastDay = monthLength;
     let candidate = lastDay;
-    while (new Date(Date.UTC(year, monthIndex, candidate)).getUTCDay() !== targetIndex) {
+    while (
+      new Date(Date.UTC(year, monthIndex, candidate)).getUTCDay() !==
+      targetIndex
+    ) {
       candidate -= 1;
     }
     return new Date(Date.UTC(year, monthIndex, candidate));
   }
 
   const candidateDay = firstTarget + (ordinal - 1) * 7;
-  if (candidateDay > new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()) return null;
+  if (candidateDay > new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate())
+    return null;
   return new Date(Date.UTC(year, monthIndex, candidateDay));
 }
 
@@ -255,8 +303,12 @@ function nextScheduleOccurrence(schedule, reference) {
     candidate.setUTCSeconds(0, 0);
     candidate.setUTCHours(schedule.hour, schedule.minute, 0, 0);
     const daysUntil = (weekdayIndex - candidate.getUTCDay() + 7) % 7;
-    candidate.setUTCDate(candidate.getUTCDate() + (daysUntil === 0 && candidate <= reference ? 7 : daysUntil));
-    if (candidate <= reference) candidate.setUTCDate(candidate.getUTCDate() + 7);
+    candidate.setUTCDate(
+      candidate.getUTCDate() +
+        (daysUntil === 0 && candidate <= reference ? 7 : daysUntil),
+    );
+    if (candidate <= reference)
+      candidate.setUTCDate(candidate.getUTCDate() + 7);
     return candidate;
   }
 
@@ -270,7 +322,7 @@ function nextScheduleOccurrence(schedule, reference) {
         new Date(Date.UTC(year, monthIndex, 1)).getUTCFullYear(),
         new Date(Date.UTC(year, monthIndex, 1)).getUTCMonth(),
         weekdays[target],
-        schedule.ordinal
+        schedule.ordinal,
       );
       if (!monthDate) continue;
       const candidate = new Date(monthDate.getTime());
@@ -291,7 +343,10 @@ function nextScheduleOccurrence(schedule, reference) {
  * (e.g. start=22, end=6 for "10pm to 6am").
  */
 export function isWithinActiveWindow(reminder, now) {
-  if (reminder.active_hours_start == null || reminder.active_hours_end == null) {
+  if (
+    reminder.active_hours_start == null ||
+    reminder.active_hours_end == null
+  ) {
     return true; // no restriction configured
   }
   const hour = localHour(now, reminder.timezone);
@@ -332,11 +387,15 @@ export function nextWindowStart(reminder, now) {
  * land outside it).
  */
 export function computeNextEligible(reminder, now) {
-  const parsed = reminder.schedule_text ? parseNaturalSchedule(reminder.schedule_text, now) : null;
+  const parsed = reminder.schedule_text
+    ? parseNaturalSchedule(reminder.schedule_text, now)
+    : null;
   if (parsed) {
     const candidate = nextScheduleOccurrence(parsed, now);
     if (candidate) {
-      const next = isWithinActiveWindow(reminder, candidate) ? candidate : nextWindowStart(reminder, candidate);
+      const next = isWithinActiveWindow(reminder, candidate)
+        ? candidate
+        : nextWindowStart(reminder, candidate);
       return next;
     }
   }
