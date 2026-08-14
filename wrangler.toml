@@ -11,3 +11,6 @@ crons = ["* * * * *"]
 binding = "DB"
 database_name = "redllamaaa_d1"
 database_id = "fff259f6-cb3e-4b8a-8ff4-49f06d55a328"
+
+[vars]
+REMINDER_REPEAT_ROLE_ID = "1530702713854230641"
