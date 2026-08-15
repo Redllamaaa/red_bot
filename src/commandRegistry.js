@@ -38,3 +38,26 @@ export const commandChoices = Object.keys(commandRegistry).map((name) => ({
   name,
   value: name,
 }));
+
+/**
+ * Runs a fun command by name and normalizes the result to { success } or
+ * { error }. Both commands.js (interactive `/compliment` etc.) and
+ * discord.js (a repeating reminder configured to run a command) need this
+ * exact "call it, catch it, log it, give the user a friendly message"
+ * behavior — this is the one place that owns it.
+ */
+export async function runFunCommand(commandName) {
+  const fn = commandRegistry[commandName];
+  if (!fn) {
+    return { error: `Unknown command \`${commandName}\`.` };
+  }
+  try {
+    const result = await fn();
+    return { success: result };
+  } catch (err) {
+    console.error(`${commandName} fetch failed:`, err.message);
+    return {
+      error: `Couldn't fetch that right now, try again in a bit!`,
+    };
+  }
+}
