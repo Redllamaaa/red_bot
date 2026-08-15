@@ -75,6 +75,8 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.commandName === "remind") {
+    await interaction.deferReply();
+
     const sub = interaction.options.getSubcommand();
     let result;
     let embedTitle = "Reminder";
@@ -113,7 +115,6 @@ client.on("interactionCreate", async (interaction) => {
         description: result.success || result.error,
         color: isError ? 0xed4245 : 0x5865f2,
       }),
-      ephemeral: isError,
     });
   }
 });
@@ -130,6 +131,7 @@ async function processDueReminders() {
         `SELECT * FROM reminders
        WHERE enabled = 1
          AND next_eligible_at <= ?
+       ORDER BY next_eligible_at ASC
        LIMIT 100`,
       )
       .bind(now.toISOString())
@@ -147,8 +149,18 @@ async function processDueReminders() {
           continue;
         }
 
-        await sendReminderMessage(client, reminder);
+        let sendFailed = false;
+        try {
+          await sendReminderMessage(client, reminder);
+        } catch (err) {
+          sendFailed = true;
+          console.error(`Failed to send reminder ${reminder.id}:`, err.message);
+        }
 
+        // Advance/disable regardless of send success. Otherwise a reminder
+        // whose channel was deleted (or any other persistent send failure)
+        // never moves past next_eligible_at and gets retried every cron
+        // tick forever, crowding out every other due reminder.
         if (reminder.type === "once") {
           await db
             .prepare(
