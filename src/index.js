@@ -51,75 +51,121 @@ function adaptInteraction(interaction) {
 client.once("clientReady", () => {
   console.log(`🤖 Logged in as ${client.user.tag}!`);
 
-  // Run initial reminder check on boot, then every 60 seconds
-  processDueReminders();
-  setInterval(processDueReminders, 60000);
+  // Run initial reminder check on boot, then schedule the next run only
+  // after each one finishes. A fixed setInterval would fire again even if
+  // the previous run was still in flight (slow D1/Discord round-trips),
+  // risking overlapping runs that could double-send the same reminder.
+  scheduleNextReminderCheck(0);
 });
+
+let reminderCheckInFlight = false;
+
+function scheduleNextReminderCheck(delayMs) {
+  setTimeout(async () => {
+    if (reminderCheckInFlight) {
+      // Previous run is still going (shouldn't normally happen since we
+      // only reschedule after completion, but guards against re-entrancy).
+      scheduleNextReminderCheck(60000);
+      return;
+    }
+    reminderCheckInFlight = true;
+    try {
+      await processDueReminders();
+    } catch (err) {
+      console.error("Unhandled error in processDueReminders:", err);
+    } finally {
+      reminderCheckInFlight = false;
+      scheduleNextReminderCheck(60000);
+    }
+  }, delayMs);
+}
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (FUN_COMMAND_NAMES.has(interaction.commandName)) {
-    await interaction.deferReply();
-    const result = await handleFunCommand(interaction.commandName);
-    const isError = Boolean(result.error);
+  try {
+    if (FUN_COMMAND_NAMES.has(interaction.commandName)) {
+      await interaction.deferReply();
+      const result = await handleFunCommand(interaction.commandName);
+      const isError = Boolean(result.error);
 
-    await interaction.editReply({
-      ...createEmbed({
-        title: isError ? "Error" : interaction.commandName,
-        description: result.success || result.error,
-        color: isError ? 0xed4245 : 0x9d00ff,
-      }),
-    });
-    return;
-  }
-
-  if (interaction.commandName === "remind") {
-    await interaction.deferReply();
-
-    const sub = interaction.options.getSubcommand();
-    let result;
-    let embedTitle = "Reminder";
-
-    const adapted = adaptInteraction(interaction);
-
-    try {
-      if (sub === "once") {
-        embedTitle = "Reminder Set";
-        result = await handleRemindOnce(adapted);
-      } else if (sub === "repeat") {
-        embedTitle = "Repeating Reminder Set";
-        result = await handleRemindRepeat(adapted);
-      } else if (sub === "command") {
-        embedTitle = "Recurring Command Reminder Set";
-        result = await handleRemindCommand(adapted);
-      } else if (sub === "list") {
-        embedTitle = "Active Reminders";
-        result = await handleRemindList(adapted);
-      } else if (sub === "delete") {
-        embedTitle = "Reminder Deleted";
-        result = await handleRemindDelete(adapted);
-      } else {
-        result = { error: "Unknown command." };
-      }
-    } catch (err) {
-      console.error("Command error:", err);
-      result = { error: `Something went wrong: ${err.message}` };
+      await interaction.editReply({
+        ...createEmbed({
+          title: isError ? "Error" : interaction.commandName,
+          description: result.success || result.error,
+          color: isError ? 0xed4245 : 0x9d00ff,
+        }),
+      });
+      return;
     }
 
-    const isError = Boolean(result.error);
+    if (interaction.commandName === "remind") {
+      await interaction.deferReply();
 
-    // Note: previously errors replied ephemerally. With deferReply() up
-    // front (needed to avoid the 3s timeout), ephemeral has to be decided
-    // at defer time — before we know if the command will fail — so error
-    // replies are now visible to the channel like everything else.
-    await interaction.editReply({
-      ...createEmbed({
-        title: isError ? "Error" : embedTitle,
-        description: result.success || result.error,
-        color: isError ? 0xed4245 : 0x5865f2,
-      }),
-    });
+      const sub = interaction.options.getSubcommand();
+      let result;
+      let embedTitle = "Reminder";
+
+      const adapted = adaptInteraction(interaction);
+
+      try {
+        if (sub === "once") {
+          embedTitle = "Reminder Set";
+          result = await handleRemindOnce(adapted);
+        } else if (sub === "repeat") {
+          embedTitle = "Repeating Reminder Set";
+          result = await handleRemindRepeat(adapted);
+        } else if (sub === "command") {
+          embedTitle = "Recurring Command Reminder Set";
+          result = await handleRemindCommand(adapted);
+        } else if (sub === "list") {
+          embedTitle = "Active Reminders";
+          result = await handleRemindList(adapted);
+        } else if (sub === "delete") {
+          embedTitle = "Reminder Deleted";
+          result = await handleRemindDelete(adapted);
+        } else {
+          result = { error: "Unknown command." };
+        }
+      } catch (err) {
+        console.error("Command error:", err);
+        result = { error: `Something went wrong: ${err.message}` };
+      }
+
+      const isError = Boolean(result.error);
+
+      // Note: previously errors replied ephemerally. With deferReply() up
+      // front (needed to avoid the 3s timeout), ephemeral has to be decided
+      // at defer time — before we know if the command will fail — so error
+      // replies are now visible to the channel like everything else.
+      await interaction.editReply({
+        ...createEmbed({
+          title: isError ? "Error" : embedTitle,
+          description: result.success || result.error,
+          color: isError ? 0xed4245 : 0x5865f2,
+        }),
+      });
+    }
+  } catch (err) {
+    // Catches failures in deferReply/editReply themselves (expired
+    // interaction, network blip, etc.) that the inner try/catch blocks
+    // above don't cover. Without this, such a failure is an unhandled
+    // rejection inside an event handler and can crash the process.
+    console.error("Unhandled interaction error:", err);
+    try {
+      const payload = createEmbed({
+        title: "Error",
+        description: "Something went wrong handling that command.",
+        color: 0xed4245,
+      });
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(payload);
+      }
+    } catch (followUpErr) {
+      console.error("Failed to notify user of error:", followUpErr);
+    }
   }
 });
 
@@ -193,4 +239,18 @@ async function processDueReminders() {
   }
 }
 
-client.login(process.env.DISCORD_TOKEN);
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  // Log and keep running rather than letting Node's default behavior
+  // (crash the process) take down every in-flight reminder/interaction.
+  // If a given error keeps recurring, it'll show up in these logs.
+  console.error("Uncaught exception:", err);
+});
+
+client.login(process.env.DISCORD_TOKEN).catch((err) => {
+  console.error("Failed to log in to Discord:", err.message);
+  process.exit(1);
+});
