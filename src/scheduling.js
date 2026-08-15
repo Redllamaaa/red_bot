@@ -121,6 +121,9 @@ export function parseNaturalDateTime(input, now = new Date()) {
   return null;
 }
 
+const MONTH_UNITS = new Set(["mo", "month", "months"]);
+const YEAR_UNITS = new Set(["yr", "year", "years"]);
+
 function parseIntervalPart(input) {
   const match =
     /^every\s+(\d+)\s*(minute|minutes|min|m|hour|hours|hr|h|day|days|d|week|weeks|wk|month|months|mo|year|years|yr)s?$/i.exec(
@@ -130,6 +133,20 @@ function parseIntervalPart(input) {
 
   const amount = Number(match[1]);
   const unit = match[2].toLowerCase();
+
+  // Months and years aren't fixed-length durations. Stepping them as a
+  // constant number of minutes (30 days, 365 days) drifts against the
+  // calendar over time — a reminder anchored to "the 1st of the month"
+  // slowly wanders to the 2nd, 3rd, etc. Step by actual calendar
+  // months/years instead (handled in nextScheduleOccurrence) so it stays
+  // pinned to the same day.
+  if (MONTH_UNITS.has(unit)) {
+    return { kind: "monthlyInterval", months: amount };
+  }
+  if (YEAR_UNITS.has(unit)) {
+    return { kind: "yearlyInterval", years: amount };
+  }
+
   const minuteMap = {
     m: 1,
     min: 1,
@@ -146,12 +163,6 @@ function parseIntervalPart(input) {
     wk: 60 * 24 * 7,
     week: 60 * 24 * 7,
     weeks: 60 * 24 * 7,
-    mo: 60 * 24 * 30,
-    month: 60 * 24 * 30,
-    months: 60 * 24 * 30,
-    yr: 60 * 24 * 365,
-    year: 60 * 24 * 365,
-    years: 60 * 24 * 365,
   };
 
   const multiplier = minuteMap[unit];
@@ -221,7 +232,7 @@ export function parseNaturalSchedule(input, now = new Date()) {
     return { kind: "interval", intervalMinutes: 7 * 24 * 60 };
   }
   if (/^every\s+month$/i.test(text) || /^monthly$/i.test(text)) {
-    return { kind: "interval", intervalMinutes: 30 * 24 * 60 };
+    return { kind: "monthlyInterval", months: 1 };
   }
 
   const intervalSchedule = parseIntervalPart(text);
@@ -285,6 +296,18 @@ function nextScheduleOccurrence(schedule, reference) {
 
   if (schedule.kind === "interval") {
     return new Date(reference.getTime() + schedule.intervalMinutes * 60000);
+  }
+
+  if (schedule.kind === "monthlyInterval") {
+    const candidate = new Date(reference.getTime());
+    candidate.setUTCMonth(candidate.getUTCMonth() + schedule.months);
+    return candidate;
+  }
+
+  if (schedule.kind === "yearlyInterval") {
+    const candidate = new Date(reference.getTime());
+    candidate.setUTCFullYear(candidate.getUTCFullYear() + schedule.years);
+    return candidate;
   }
 
   if (schedule.kind === "daily") {
