@@ -54,30 +54,13 @@ function parseActiveHours(str) {
   };
 }
 
-function hasRole(interaction, roleId) {
-  if (!roleId) return false;
-  const roles = interaction.member?.roles;
-  if (!roles) return false;
-  // discord.js gateway/API interactions: GuildMemberRoleManager (has .cache)
-  if (roles.cache) return roles.cache.has(roleId);
-  // raw REST-style payload: plain array of role IDs
-  if (Array.isArray(roles)) return roles.includes(roleId);
-  return false;
-}
-
-export async function handleRemindCommand(interaction) {
-  if (!hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID)) {
-    return {
-      error: "You don't have permission to create repeating reminders.",
-    };
-  }
-
-  const opts = optionMap(interaction);
-  const commandName = opts.command;
-  if (!commandRegistry[commandName]) {
-    return { error: `Unknown command \`${commandName}\`.` };
-  }
-
+/**
+ * Parses the "every ..." schedule text and optional active-hours window
+ * shared by both repeating-reminder types (plain message repeats and
+ * command repeats). Returns either { error } or the parsed fields needed
+ * to build a reminder row.
+ */
+function parseRepeatingScheduleOptions(opts) {
   const scheduleText = String(opts.every || "").trim();
   const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
   const intervalMinutes =
@@ -100,8 +83,31 @@ export async function handleRemindCommand(interaction) {
     activeEnd = parsed.end;
   }
 
+  return {
+    scheduleText,
+    parsedSchedule,
+    intervalMinutes,
+    activeStart,
+    activeEnd,
+  };
+}
+
+/**
+ * Inserts a repeating reminder row (used for both plain-message repeats
+ * and command repeats — they only differ in which columns carry the
+ * payload). `payload` is `{ title, message, commandName }`.
+ */
+async function insertRepeatingReminder(interaction, schedule, payload) {
+  const {
+    scheduleText,
+    parsedSchedule,
+    intervalMinutes,
+    activeStart,
+    activeEnd,
+  } = schedule;
+
   const id = crypto.randomUUID();
-  const timezone = opts.timezone || "UTC";
+  const timezone = payload.timezone || "UTC";
   const now = new Date();
 
   const draftReminder = {
@@ -128,10 +134,10 @@ export async function handleRemindCommand(interaction) {
       interaction.guild_id,
       interaction.channel_id,
       interaction.member?.user?.id || interaction.user?.id,
-      opts.title || commandName,
-      "", // message stays NOT NULL-safe; command_name drives the content instead
-      commandName,
-      opts.role || null,
+      payload.title,
+      payload.message ?? "",
+      payload.commandName || null,
+      payload.role || null,
       intervalMinutes,
       parsedSchedule ? scheduleText : null,
       activeStart,
@@ -145,6 +151,49 @@ export async function handleRemindCommand(interaction) {
     activeStart != null
       ? ` (active ${activeStart}:00-${activeEnd}:00 ${timezone})`
       : "";
+
+  return { id, scheduleText, windowText };
+}
+
+function hasRole(interaction, roleId) {
+  if (!roleId) return false;
+  const roles = interaction.member?.roles;
+  if (!roles) return false;
+  // discord.js gateway/API interactions: GuildMemberRoleManager (has .cache)
+  if (roles.cache) return roles.cache.has(roleId);
+  // raw REST-style payload: plain array of role IDs
+  if (Array.isArray(roles)) return roles.includes(roleId);
+  return false;
+}
+
+export async function handleRemindCommand(interaction) {
+  if (!hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID)) {
+    return {
+      error: "You don't have permission to create repeating reminders.",
+    };
+  }
+
+  const opts = optionMap(interaction);
+  const commandName = opts.command;
+  if (!commandRegistry[commandName]) {
+    return { error: `Unknown command \`${commandName}\`.` };
+  }
+
+  const schedule = parseRepeatingScheduleOptions(opts);
+  if (schedule.error) return schedule;
+
+  const { id, scheduleText, windowText } = await insertRepeatingReminder(
+    interaction,
+    schedule,
+    {
+      title: opts.title || commandName,
+      message: "", // message stays NOT NULL-safe; command_name drives the content instead
+      commandName,
+      role: opts.role,
+      timezone: opts.timezone,
+    },
+  );
+
   return {
     success: `Repeating command reminder set: \`${commandName}\` ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
   };
@@ -194,72 +243,20 @@ export async function handleRemindRepeat(interaction) {
   }
 
   const opts = optionMap(interaction);
-  const scheduleText = String(opts.every || "").trim();
-  const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
-  const intervalMinutes =
-    parsedSchedule && parsedSchedule.kind === "interval"
-      ? parsedSchedule.intervalMinutes
-      : parseDuration(scheduleText);
+  const schedule = parseRepeatingScheduleOptions(opts);
+  if (schedule.error) return schedule;
 
-  if (!parsedSchedule && !intervalMinutes) {
-    return {
-      error:
-        "Couldn't parse the schedule. Try something like `every week`, `first monday each month`, `every friday at 20`, `3h`, `45m`, or `1d`.",
-    };
-  }
+  const { id, scheduleText, windowText } = await insertRepeatingReminder(
+    interaction,
+    schedule,
+    {
+      title: opts.title || "Reminder",
+      message: opts.message,
+      role: opts.role,
+      timezone: opts.timezone,
+    },
+  );
 
-  let activeStart = null;
-  let activeEnd = null;
-  if (opts.active) {
-    const parsed = parseActiveHours(opts.active);
-    activeStart = parsed.start;
-    activeEnd = parsed.end;
-  }
-
-  const id = crypto.randomUUID();
-  const timezone = opts.timezone || "UTC";
-  const now = new Date();
-
-  const draftReminder = {
-    active_hours_start: activeStart,
-    active_hours_end: activeEnd,
-    timezone,
-    schedule_text: parsedSchedule ? scheduleText : null,
-    interval_minutes: intervalMinutes,
-  };
-  const nextEligible = isWithinActiveWindow(draftReminder, now)
-    ? now
-    : nextWindowStart(draftReminder, now);
-
-  await db
-    .prepare(
-      `INSERT INTO reminders
-     (id, guild_id, channel_id, created_by, type, title, message, ping_role_id,
-      interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
-      next_eligible_at, enabled)
-     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-    )
-    .bind(
-      id,
-      interaction.guild_id,
-      interaction.channel_id,
-      interaction.member?.user?.id || interaction.user?.id,
-      opts.title || "Reminder",
-      opts.message,
-      opts.role || null,
-      intervalMinutes,
-      parsedSchedule ? scheduleText : null,
-      activeStart,
-      activeEnd,
-      timezone,
-      nextEligible.toISOString(),
-    )
-    .run();
-
-  const windowText =
-    activeStart != null
-      ? ` (active ${activeStart}:00-${activeEnd}:00 ${timezone})`
-      : "";
   return {
     success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
   };
