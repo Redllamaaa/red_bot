@@ -318,20 +318,18 @@ export async function handleRemindDelete(interaction) {
   return { success: `Reminder \`${idPrefix}\` deleted.` };
 }
 
-export async function handleCompliment() {
+export async function handleFunCommand(commandName) {
+  const fn = commandRegistry[commandName];
+  if (!fn) {
+    return { error: `Unknown command \`${commandName}\`.` };
+  }
   try {
-    const res = await fetch("https://my-fun-api.onrender.com/compliment");
-    if (!res.ok) {
-      return {
-        error: "Couldn't fetch a compliment right now, try again in a bit!",
-      };
-    }
-    const data = await res.json();
-    return { success: data.data.compliment };
+    const result = await fn();
+    return { success: result };
   } catch (err) {
-    console.error("Compliment fetch failed:", err.message);
+    console.error(`${commandName} fetch failed:`, err.message);
     return {
-      error: "Couldn't fetch a compliment right now, try again in a bit!",
+      error: `Couldn't fetch that right now, try again in a bit!`,
     };
   }
 }

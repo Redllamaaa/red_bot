@@ -12,12 +12,14 @@ import {
   handleRemindList,
   handleRemindDelete,
   handleRemindCommand,
-  handleCompliment,
+  handleFunCommand,
 } from "./commands.js";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
+
+const FUN_COMMAND_NAMES = new Set(Object.keys(commandRegistry));
 
 function createEmbed({ title, description, color = 0x5865f2 }) {
   return {
@@ -56,14 +58,14 @@ client.once("clientReady", () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === "compliment") {
+  if (FUN_COMMAND_NAMES.has(interaction.commandName)) {
     await interaction.deferReply();
-    const result = await handleCompliment();
+    const result = await handleFunCommand(interaction.commandName);
     const isError = Boolean(result.error);
 
     await interaction.editReply({
       ...createEmbed({
-        title: isError ? "Error" : "Compliment",
+        title: isError ? "Error" : interaction.commandName,
         description: result.success || result.error,
         color: isError ? 0xed4245 : 0x9d00ff,
       }),

@@ -8,7 +8,7 @@
  * /applications/{app_id}/guilds/{guild_id}/commands).
  */
 
-import { commandChoices } from "./src/commandRegistry.js"; // adjust path to match your project layout
+import { commandRegistry, commandChoices } from "./src/commandRegistry.js"; // adjust path to match your project layout
 
 const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID;
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -18,11 +18,26 @@ if (!APPLICATION_ID || !TOKEN) {
   process.exit(1);
 }
 
+// Human-friendly descriptions for each fun command. Falls back to a generic
+// description if a name isn't listed here, so new commandRegistry entries
+// don't need to be added twice.
+const FUN_COMMAND_DESCRIPTIONS = {
+  compliment: "Get a random compliment",
+  fortune: "Get a random fortune",
+  funfact: "Get a random fun fact",
+  pizzaidea: "Get a random pizza topping idea",
+  lifetruth: "Get a random life truth",
+  thought: "Get a random thought",
+};
+
+// One slash command per entry in commandRegistry (compliment, fortune, etc.)
+const funCommands = Object.keys(commandRegistry).map((name) => ({
+  name,
+  description: FUN_COMMAND_DESCRIPTIONS[name] || `Get a random ${name}`,
+}));
+
 const commands = [
-  {
-    name: "compliment",
-    description: "Get a random compliment",
-  },
+  ...funCommands,
   {
     name: "remind",
     description: "Manage reminders",
