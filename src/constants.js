@@ -1,9 +1,9 @@
 // Discord embed colors
 export const COLORS = {
-  DEFAULT: 0x5865f2, // reminder confirmations
+  DEFAULT: 0xe8e4f0, // reminder confirmations
   ERROR: 0xed4245, // Errors
-  FUN: 0x9d00ff, // fun-command replies
-  REMINDER_SENT: 0x3498db, // reminder messages
+  FUN: 0xf4d58d, // fun-command replies
+  REMINDER_SENT: 0xb8d8e8, // reminder messages
 };
 
 // Discord's hard limits on embed field lengths.
