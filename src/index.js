@@ -24,6 +24,15 @@ const client = new Client({
 
 const FUN_COMMAND_NAMES = new Set(Object.keys(commandRegistry));
 
+const FUN_COMMAND_TITLES = {
+  compliment: "Compliment",
+  fortune: "Fortune",
+  funfact: "Fun Fact",
+  pizzaidea: "Pizza Idea",
+  lifetruth: "Life Truth",
+  thought: "Thought",
+};
+
 function createEmbed({ title, description, color = COLORS.DEFAULT }) {
   return {
     embeds: [
@@ -93,7 +102,10 @@ client.on("interactionCreate", async (interaction) => {
 
       await interaction.editReply({
         ...createEmbed({
-          title: isError ? "Error" : interaction.commandName,
+          title: isError
+            ? "Error"
+            : FUN_COMMAND_TITLES[interaction.commandName] ||
+              interaction.commandName,
           description: result.success || result.error,
           color: isError ? COLORS.ERROR : COLORS.FUN,
         }),
