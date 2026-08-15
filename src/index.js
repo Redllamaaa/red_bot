@@ -6,6 +6,7 @@ import {
   nextWindowStart,
   computeNextEligible,
 } from "./scheduling.js";
+import { commandRegistry } from "./commandRegistry.js";
 import {
   handleRemindOnce,
   handleRemindRepeat,
