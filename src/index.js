@@ -109,7 +109,11 @@ client.on("interactionCreate", async (interaction) => {
 
     const isError = Boolean(result.error);
 
-    await interaction.reply({
+    // Note: previously errors replied ephemerally. With deferReply() up
+    // front (needed to avoid the 3s timeout), ephemeral has to be decided
+    // at defer time — before we know if the command will fail — so error
+    // replies are now visible to the channel like everything else.
+    await interaction.editReply({
       ...createEmbed({
         title: isError ? "Error" : embedTitle,
         description: result.success || result.error,
