@@ -2,18 +2,34 @@ const ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
 const DATABASE_ID = process.env.CF_DATABASE_ID;
 const API_TOKEN = process.env.CF_API_TOKEN;
 
+const D1_TIMEOUT_MS = 10000;
+
 async function queryD1(sql, params = []) {
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/d1/database/${DATABASE_ID}/query`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${API_TOKEN}`,
-        "Content-Type": "application/json",
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), D1_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/d1/database/${DATABASE_ID}/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sql, params }),
+        signal: controller.signal,
       },
-      body: JSON.stringify({ sql, params }),
-    },
-  );
+    );
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`D1 request timed out after ${D1_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     // Non-2xx responses (rate limits, outages, auth failures) don't

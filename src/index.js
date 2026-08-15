@@ -170,6 +170,28 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 /**
+ * Runs `worker` over `items` with at most `limit` in flight at once.
+ * Keeps the cron job from serializing on N sequential D1+Discord
+ * round-trips while still capping concurrency so we don't hammer either
+ * API when a large batch comes due at once.
+ */
+async function mapWithConcurrency(items, limit, worker) {
+  const queue = [...items];
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (queue.length) {
+        const item = queue.shift();
+        await worker(item);
+      }
+    },
+  );
+  await Promise.all(runners);
+}
+
+const REMINDER_PROCESSING_CONCURRENCY = 8;
+
+/**
  * Background Cron Job
  */
 async function processDueReminders() {
@@ -187,55 +209,54 @@ async function processDueReminders() {
       .bind(now.toISOString())
       .all();
 
-    for (const reminder of due) {
-      try {
-        if (!isWithinActiveWindow(reminder, now)) {
-          const next = nextWindowStart(reminder, now);
-          await db
-            .prepare(`UPDATE reminders SET next_eligible_at = ? WHERE id = ?`)
-            .bind(next.toISOString(), reminder.id)
-            .run();
-
-          continue;
-        }
-
-        let sendFailed = false;
-        try {
-          await sendReminderMessage(client, reminder);
-        } catch (err) {
-          sendFailed = true;
-          console.error(`Failed to send reminder ${reminder.id}:`, err.message);
-        }
-
-        // Advance/disable regardless of send success. Otherwise a reminder
-        // whose channel was deleted (or any other persistent send failure)
-        // never moves past next_eligible_at and gets retried every cron
-        // tick forever, crowding out every other due reminder.
-        if (reminder.type === "once") {
-          await db
-            .prepare(
-              `UPDATE reminders SET enabled = 0, last_sent_at = ? WHERE id = ?`,
-            )
-            .bind(now.toISOString(), reminder.id)
-            .run();
-        } else {
-          const next = computeNextEligible(reminder, now);
-          await db
-            .prepare(
-              `UPDATE reminders SET last_sent_at = ?, next_eligible_at = ? WHERE id = ?`,
-            )
-            .bind(now.toISOString(), next.toISOString(), reminder.id)
-            .run();
-        }
-      } catch (err) {
-        console.error(
-          `Failed to process reminder ${reminder.id}:`,
-          err.message,
-        );
-      }
-    }
+    await mapWithConcurrency(due, REMINDER_PROCESSING_CONCURRENCY, (reminder) =>
+      processReminder(reminder, now),
+    );
   } catch (err) {
     console.error("Error processing due reminders:", err);
+  }
+}
+
+/** Sends (or reschedules) a single due reminder. Independent of every other reminder, so safe to run concurrently. */
+async function processReminder(reminder, now) {
+  try {
+    if (!isWithinActiveWindow(reminder, now)) {
+      const next = nextWindowStart(reminder, now);
+      await db
+        .prepare(`UPDATE reminders SET next_eligible_at = ? WHERE id = ?`)
+        .bind(next.toISOString(), reminder.id)
+        .run();
+      return;
+    }
+
+    try {
+      await sendReminderMessage(client, reminder);
+    } catch (err) {
+      console.error(`Failed to send reminder ${reminder.id}:`, err.message);
+    }
+
+    // Advance/disable regardless of send success. Otherwise a reminder
+    // whose channel was deleted (or any other persistent send failure)
+    // never moves past next_eligible_at and gets retried every cron
+    // tick forever, crowding out every other due reminder.
+    if (reminder.type === "once") {
+      await db
+        .prepare(
+          `UPDATE reminders SET enabled = 0, last_sent_at = ? WHERE id = ?`,
+        )
+        .bind(now.toISOString(), reminder.id)
+        .run();
+    } else {
+      const next = computeNextEligible(reminder, now);
+      await db
+        .prepare(
+          `UPDATE reminders SET last_sent_at = ?, next_eligible_at = ? WHERE id = ?`,
+        )
+        .bind(now.toISOString(), next.toISOString(), reminder.id)
+        .run();
+    }
+  } catch (err) {
+    console.error(`Failed to process reminder ${reminder.id}:`, err.message);
   }
 }
 
