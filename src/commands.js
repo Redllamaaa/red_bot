@@ -293,11 +293,18 @@ export async function handleRemindList(interaction) {
 export async function handleRemindDelete(interaction) {
   const opts = optionMap(interaction);
   const idPrefix = opts.id;
+
+  // idPrefix is user input placed into a LIKE pattern. % and _ are SQL
+  // wildcards, so an id fragment that happens to contain them could match
+  // reminders it wasn't meant to. Escape them and tell SQLite what the
+  // escape character is.
+  const escapedPrefix = String(idPrefix || "").replace(/[\\%_]/g, "\\$&");
+
   const { results } = await db
     .prepare(
-      `SELECT id FROM reminders WHERE guild_id = ? AND id LIKE ? AND enabled = 1`,
+      `SELECT id, created_by FROM reminders WHERE guild_id = ? AND id LIKE ? ESCAPE '\\' AND enabled = 1`,
     )
-    .bind(interaction.guild_id, `${idPrefix}%`)
+    .bind(interaction.guild_id, `${escapedPrefix}%`)
     .all();
 
   if (!results.length)
@@ -307,9 +314,20 @@ export async function handleRemindDelete(interaction) {
       error: `Multiple reminders match \`${idPrefix}\`, be more specific.`,
     };
 
+  const reminder = results[0];
+  const requesterId = interaction.member?.user?.id || interaction.user?.id;
+  const canManage =
+    reminder.created_by === requesterId ||
+    hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID);
+  if (!canManage) {
+    return {
+      error: "You can only delete reminders you created.",
+    };
+  }
+
   await db
     .prepare(`UPDATE reminders SET enabled = 0 WHERE id = ?`)
-    .bind(results[0].id)
+    .bind(reminder.id)
     .run();
 
   return { success: `Reminder \`${idPrefix}\` deleted.` };
