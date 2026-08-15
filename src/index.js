@@ -15,6 +15,8 @@ import {
   handleRemindCommand,
   handleFunCommand,
 } from "./commands.js";
+import { COLORS, EMBED_LIMITS } from "./constants.js";
+import { truncate } from "./utils.js";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -22,12 +24,12 @@ const client = new Client({
 
 const FUN_COMMAND_NAMES = new Set(Object.keys(commandRegistry));
 
-function createEmbed({ title, description, color = 0x5865f2 }) {
+function createEmbed({ title, description, color = COLORS.DEFAULT }) {
   return {
     embeds: [
       {
-        title,
-        description,
+        title: truncate(title, EMBED_LIMITS.TITLE),
+        description: truncate(description, EMBED_LIMITS.DESCRIPTION),
         color,
       },
     ],
@@ -93,7 +95,7 @@ client.on("interactionCreate", async (interaction) => {
         ...createEmbed({
           title: isError ? "Error" : interaction.commandName,
           description: result.success || result.error,
-          color: isError ? 0xed4245 : 0x9d00ff,
+          color: isError ? COLORS.ERROR : COLORS.FUN,
         }),
       });
       return;
@@ -142,7 +144,7 @@ client.on("interactionCreate", async (interaction) => {
         ...createEmbed({
           title: isError ? "Error" : embedTitle,
           description: result.success || result.error,
-          color: isError ? 0xed4245 : 0x5865f2,
+          color: isError ? COLORS.ERROR : COLORS.DEFAULT,
         }),
       });
     }
@@ -156,7 +158,7 @@ client.on("interactionCreate", async (interaction) => {
       const payload = createEmbed({
         title: "Error",
         description: "Something went wrong handling that command.",
-        color: 0xed4245,
+        color: COLORS.ERROR,
       });
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload);
