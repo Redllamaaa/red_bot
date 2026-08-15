@@ -1,11 +1,13 @@
 import { db } from "./db.js";
-import { commandRegistry } from "./commandRegistry.js";
+import { commandRegistry, runFunCommand } from "./commandRegistry.js";
 import {
   isWithinActiveWindow,
   nextWindowStart,
   parseNaturalDateTime,
   parseNaturalSchedule,
 } from "./scheduling.js";
+import { EMBED_LIMITS } from "./constants.js";
+import { truncate } from "./utils.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {
@@ -106,6 +108,12 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
     activeEnd,
   } = schedule;
 
+  // Truncate before storing, not just before display, so a too-long title
+  // or message doesn't sit in the DB waiting to fail channel.send() every
+  // single time this reminder fires.
+  const title = truncate(payload.title, EMBED_LIMITS.TITLE);
+  const message = truncate(payload.message ?? "", EMBED_LIMITS.DESCRIPTION);
+
   const id = crypto.randomUUID();
   const timezone = payload.timezone || "UTC";
   const now = new Date();
@@ -134,8 +142,8 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
       interaction.guild_id,
       interaction.channel_id,
       interaction.member?.user?.id || interaction.user?.id,
-      payload.title,
-      payload.message ?? "",
+      title,
+      message,
       payload.commandName || null,
       payload.role || null,
       intervalMinutes,
@@ -210,6 +218,8 @@ export async function handleRemindOnce(interaction) {
   }
 
   const id = crypto.randomUUID();
+  const title = truncate(opts.title || "Reminder", EMBED_LIMITS.TITLE);
+  const message = truncate(opts.message, EMBED_LIMITS.DESCRIPTION);
   await db
     .prepare(
       `INSERT INTO reminders
@@ -222,8 +232,8 @@ export async function handleRemindOnce(interaction) {
       interaction.guild_id,
       interaction.channel_id,
       interaction.member?.user?.id || interaction.user?.id,
-      opts.title || "Reminder",
-      opts.message,
+      title,
+      message,
       opts.role || null,
       fireAt.toISOString(),
       fireAt.toISOString(),
@@ -334,17 +344,5 @@ export async function handleRemindDelete(interaction) {
 }
 
 export async function handleFunCommand(commandName) {
-  const fn = commandRegistry[commandName];
-  if (!fn) {
-    return { error: `Unknown command \`${commandName}\`.` };
-  }
-  try {
-    const result = await fn();
-    return { success: result };
-  } catch (err) {
-    console.error(`${commandName} fetch failed:`, err.message);
-    return {
-      error: `Couldn't fetch that right now, try again in a bit!`,
-    };
-  }
+  return runFunCommand(commandName);
 }
