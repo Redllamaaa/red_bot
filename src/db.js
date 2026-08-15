@@ -15,6 +15,22 @@ async function queryD1(sql, params = []) {
     },
   );
 
+  if (!response.ok) {
+    // Non-2xx responses (rate limits, outages, auth failures) don't
+    // reliably come back as the { success, errors } JSON shape below —
+    // sometimes it's an HTML error page. Surface the HTTP status clearly
+    // instead of letting response.json() throw an opaque parse error.
+    let bodyText = "";
+    try {
+      bodyText = await response.text();
+    } catch {
+      // ignore — best effort
+    }
+    throw new Error(
+      `D1 request failed with status ${response.status}${bodyText ? `: ${bodyText.slice(0, 200)}` : ""}`,
+    );
+  }
+
   const data = await response.json();
   if (!data.success) {
     throw new Error(data.errors?.[0]?.message || "D1 Query Failed");
