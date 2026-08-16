@@ -8,7 +8,13 @@ import {
 } from "./scheduling.js";
 import { EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
-import { hasRole, checkRole } from "./utils/permissions.js";
+import {
+  hasAnyRole,
+  isUser,
+  isAdmin,
+  checkPermission,
+  ROLE_PERMISSIONS,
+} from "./utils/permissions.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {
@@ -165,9 +171,9 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
 }
 
 export async function handleRemindCommand(interaction) {
-  const permissionError = checkRole(
+  const permissionError = checkPermission(
     interaction,
-    process.env.REMINDER_REPEAT_ROLE_ID,
+    "MANAGE_REMINDERS",
     "You don't have permission to create repeating reminders.",
   );
   if (permissionError) return permissionError;
@@ -237,9 +243,9 @@ export async function handleRemindOnce(interaction) {
 }
 
 export async function handleRemindRepeat(interaction) {
-  const permissionError = checkRole(
+  const permissionError = checkPermission(
     interaction,
-    process.env.REMINDER_REPEAT_ROLE_ID,
+    "MANAGE_REMINDERS",
     "You don't have permission to create repeating reminders.",
   );
   if (permissionError) return permissionError;
@@ -318,9 +324,12 @@ export async function handleRemindDelete(interaction) {
 
   const reminder = results[0];
   const requesterId = interaction.member?.user?.id || interaction.user?.id;
+  const perm = ROLE_PERMISSIONS.MANAGE_REMINDERS;
   const canManage =
     reminder.created_by === requesterId ||
-    hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID);
+    hasAnyRole(interaction, perm.roles) ||
+    isUser(interaction, perm.users) ||
+    (perm.allowAdmin && isAdmin(interaction));
   if (!canManage) {
     return {
       error: "You can only delete reminders you created.",
