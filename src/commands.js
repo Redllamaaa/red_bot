@@ -8,6 +8,7 @@ import {
 } from "./scheduling.js";
 import { EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
+import { hasRole, checkRole } from "./utils/permissions.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {
@@ -163,23 +164,13 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
   return { id, scheduleText, windowText };
 }
 
-function hasRole(interaction, roleId) {
-  if (!roleId) return false;
-  const roles = interaction.member?.roles;
-  if (!roles) return false;
-  // discord.js gateway/API interactions: GuildMemberRoleManager (has .cache)
-  if (roles.cache) return roles.cache.has(roleId);
-  // raw REST-style payload: plain array of role IDs
-  if (Array.isArray(roles)) return roles.includes(roleId);
-  return false;
-}
-
 export async function handleRemindCommand(interaction) {
-  if (!hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID)) {
-    return {
-      error: "You don't have permission to create repeating reminders.",
-    };
-  }
+  const permissionError = checkRole(
+    interaction,
+    process.env.REMINDER_REPEAT_ROLE_ID,
+    "You don't have permission to create repeating reminders.",
+  );
+  if (permissionError) return permissionError;
 
   const opts = optionMap(interaction);
   const commandName = opts.command;
@@ -246,11 +237,12 @@ export async function handleRemindOnce(interaction) {
 }
 
 export async function handleRemindRepeat(interaction) {
-  if (!hasRole(interaction, process.env.REMINDER_REPEAT_ROLE_ID)) {
-    return {
-      error: "You don't have permission to create repeating reminders.",
-    };
-  }
+  const permissionError = checkRole(
+    interaction,
+    process.env.REMINDER_REPEAT_ROLE_ID,
+    "You don't have permission to create repeating reminders.",
+  );
+  if (permissionError) return permissionError;
 
   const opts = optionMap(interaction);
   const schedule = parseRepeatingScheduleOptions(opts);
