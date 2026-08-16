@@ -15,8 +15,8 @@ import {
   handleRemindCommand,
   handleFunCommand,
 } from "./commands.js";
-import { COLORS, EMBED_LIMITS } from "./constants.js";
-import { truncate } from "./utils.js";
+import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
+import { truncate } from "./utils/utils.js";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],

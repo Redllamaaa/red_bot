@@ -6,8 +6,8 @@ import {
   parseNaturalDateTime,
   parseNaturalSchedule,
 } from "./scheduling.js";
-import { EMBED_LIMITS } from "./constants.js";
-import { truncate } from "./utils.js";
+import { EMBED_LIMITS } from "./utils/constants.js";
+import { truncate } from "./utils/utils.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {

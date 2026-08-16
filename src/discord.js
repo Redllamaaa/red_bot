@@ -1,6 +1,6 @@
 import { runFunCommand } from "./commandRegistry.js";
-import { COLORS, EMBED_LIMITS } from "./constants.js";
-import { truncate } from "./utils.js";
+import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
+import { truncate } from "./utils/utils.js";
 
 /**
  * Sends a message (with optional embed + role ping) to a channel using discord.js.
