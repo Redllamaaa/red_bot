@@ -2,14 +2,8 @@ import { PermissionsBitField } from "discord.js";
 
 export const ROLE_PERMISSIONS = {
   MANAGE_REMINDERS: {
-    roles: [
-      process.env.REMINDER_REPEAT_ROLE_ID,
-      // process.env.SOME_OTHER_ROLE_ID,  <- add more roles here as needed
-    ],
-    users: [
-      process.env.BOT_OWNER_USER_ID,
-      // "123456789012345678",  <- or hardcode a specific user ID directly
-    ],
+    roles: [process.env.REMINDER_REPEAT_ROLE_ID],
+    users: ["661140312248549376"],
     allowAdmin: true,
   },
 };
