@@ -28,3 +28,29 @@ CREATE TABLE reminders (
 
 CREATE INDEX idx_reminders_due ON reminders (enabled, next_eligible_at);
 CREATE INDEX idx_reminders_guild ON reminders (guild_id);
+
+
+
+
+CREATE TABLE birthdays (
+    id TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+
+    month INTEGER NOT NULL,
+    day INTEGER NOT NULL,
+
+    role_id TEXT,
+
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_sent_year INTEGER,
+
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+
+    UNIQUE (guild_id, user_id)
+);
+
+CREATE INDEX idx_birthdays_date
+ON birthdays (month, day, enabled);

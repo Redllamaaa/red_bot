@@ -4,6 +4,7 @@ export const COLORS = {
   ERROR: 0xed4245, // Errors
   FUN: 0xf4d58d, // fun-command replies
   REMINDER_SENT: 0xb8d8e8, // reminder messages
+  BIRTHDAY: 0xf4d58d, // birthday messages
 };
 
 // Discord's hard limits on embed field lengths.

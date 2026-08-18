@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { db } from "./db.js";
-import { sendReminderMessage } from "./discord.js";
+import { sendReminderMessage, sendBirthdayMessage } from "./discord.js";
 import {
   isWithinActiveWindow,
   nextWindowStart,
@@ -13,6 +13,7 @@ import {
   handleRemindList,
   handleRemindDelete,
   handleRemindCommand,
+  handleBirthdayCommand,
   handleFunCommand,
 } from "./commands.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
@@ -45,15 +46,17 @@ function createEmbed({ title, description, color = COLORS.DEFAULT }) {
   };
 }
 
-// Convert discord.js Interaction to match commands.js expected format
+// Convert discord.js Interaction to match commands.js expected format.
 function adaptInteraction(interaction) {
   const subOption = interaction.options.data[0];
+
   return {
     guild_id: interaction.guildId,
     channel_id: interaction.channelId,
     user: interaction.user,
     member: interaction.member,
     data: {
+      subcommand: subOption?.name,
       options: subOption?.options || [],
     },
   };
@@ -62,10 +65,8 @@ function adaptInteraction(interaction) {
 client.once("clientReady", () => {
   console.log(`🤖 Logged in as ${client.user.tag}!`);
 
-  // Run initial reminder check on boot, then schedule the next run only
-  // after each one finishes. A fixed setInterval would fire again even if
-  // the previous run was still in flight (slow D1/Discord round-trips),
-  // risking overlapping runs that could double-send the same reminder.
+  // Run initial checks on boot, then schedule the next run only after the
+  // previous one finishes.
   scheduleNextReminderCheck(0);
 });
 
@@ -74,16 +75,17 @@ let reminderCheckInFlight = false;
 function scheduleNextReminderCheck(delayMs) {
   setTimeout(async () => {
     if (reminderCheckInFlight) {
-      // Previous run is still going (shouldn't normally happen since we
-      // only reschedule after completion, but guards against re-entrancy).
       scheduleNextReminderCheck(60000);
       return;
     }
+
     reminderCheckInFlight = true;
+
     try {
       await processDueReminders();
+      await processDueBirthdays();
     } catch (err) {
-      console.error("Unhandled error in processDueReminders:", err);
+      console.error("Unhandled error in background processing:", err);
     } finally {
       reminderCheckInFlight = false;
       scheduleNextReminderCheck(60000);
@@ -97,6 +99,7 @@ client.on("interactionCreate", async (interaction) => {
   try {
     if (FUN_COMMAND_NAMES.has(interaction.commandName)) {
       await interaction.deferReply();
+
       const result = await handleFunCommand(interaction.commandName);
       const isError = Boolean(result.error);
 
@@ -110,19 +113,46 @@ client.on("interactionCreate", async (interaction) => {
           color: isError ? COLORS.ERROR : COLORS.FUN,
         }),
       });
+
       return;
     }
 
-    if (interaction.commandName === "remind") {
-      await interaction.deferReply();
+    if (
+      interaction.commandName !== "remind" &&
+      interaction.commandName !== "birthday"
+    ) {
+      return;
+    }
 
-      const sub = interaction.options.getSubcommand();
-      let result;
-      let embedTitle = "Reminder";
+    await interaction.deferReply();
 
-      const adapted = adaptInteraction(interaction);
+    let result;
+    let embedTitle = "Reminder";
 
-      try {
+    const adapted = adaptInteraction(interaction);
+
+    try {
+      if (interaction.commandName === "birthday") {
+        const sub = interaction.options.getSubcommand();
+
+        if (sub === "set") {
+          embedTitle = "Birthday Set";
+        } else if (sub === "delete") {
+          embedTitle = "Birthday Deleted";
+        } else if (sub === "list") {
+          embedTitle = "Birthdays";
+        }
+
+        result = await handleBirthdayCommand({
+          ...adapted,
+          data: {
+            ...adapted.data,
+            subcommand: sub,
+          },
+        });
+      } else {
+        const sub = interaction.options.getSubcommand();
+
         if (sub === "once") {
           embedTitle = "Reminder Set";
           result = await handleRemindOnce(adapted);
@@ -139,39 +169,38 @@ client.on("interactionCreate", async (interaction) => {
           embedTitle = "Reminder Deleted";
           result = await handleRemindDelete(adapted);
         } else {
-          result = { error: "Unknown command." };
+          result = {
+            error: "Unknown command.",
+          };
         }
-      } catch (err) {
-        console.error("Command error:", err);
-        result = { error: `Something went wrong: ${err.message}` };
       }
+    } catch (err) {
+      console.error("Command error:", err);
 
-      const isError = Boolean(result.error);
-
-      // Note: previously errors replied ephemerally. With deferReply() up
-      // front (needed to avoid the 3s timeout), ephemeral has to be decided
-      // at defer time — before we know if the command will fail — so error
-      // replies are now visible to the channel like everything else.
-      await interaction.editReply({
-        ...createEmbed({
-          title: isError ? "Error" : embedTitle,
-          description: result.success || result.error,
-          color: isError ? COLORS.ERROR : COLORS.DEFAULT,
-        }),
-      });
+      result = {
+        error: `Something went wrong: ${err.message}`,
+      };
     }
+
+    const isError = Boolean(result.error);
+
+    await interaction.editReply({
+      ...createEmbed({
+        title: isError ? "Error" : embedTitle,
+        description: result.success || result.error,
+        color: isError ? COLORS.ERROR : COLORS.DEFAULT,
+      }),
+    });
   } catch (err) {
-    // Catches failures in deferReply/editReply themselves (expired
-    // interaction, network blip, etc.) that the inner try/catch blocks
-    // above don't cover. Without this, such a failure is an unhandled
-    // rejection inside an event handler and can crash the process.
     console.error("Unhandled interaction error:", err);
+
     try {
       const payload = createEmbed({
         title: "Error",
         description: "Something went wrong handling that command.",
         color: COLORS.ERROR,
       });
+
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload);
       } else {
@@ -185,28 +214,32 @@ client.on("interactionCreate", async (interaction) => {
 
 /**
  * Runs `worker` over `items` with at most `limit` in flight at once.
- * Keeps the cron job from serializing on N sequential D1+Discord
- * round-trips while still capping concurrency so we don't hammer either
- * API when a large batch comes due at once.
  */
 async function mapWithConcurrency(items, limit, worker) {
   const queue = [...items];
+
   const runners = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
       while (queue.length) {
         const item = queue.shift();
-        await worker(item);
+
+        try {
+          await worker(item);
+        } catch (err) {
+          console.error("Background item failed:", err);
+        }
       }
     },
   );
+
   await Promise.all(runners);
 }
 
 const REMINDER_PROCESSING_CONCURRENCY = 8;
 
 /**
- * Background Cron Job
+ * Process normal reminders.
  */
 async function processDueReminders() {
   const now = new Date();
@@ -214,11 +247,12 @@ async function processDueReminders() {
   try {
     const { results: due } = await db
       .prepare(
-        `SELECT * FROM reminders
-       WHERE enabled = 1
-         AND next_eligible_at <= ?
-       ORDER BY next_eligible_at ASC
-       LIMIT 100`,
+        `SELECT *
+         FROM reminders
+         WHERE enabled = 1
+           AND next_eligible_at <= ?
+         ORDER BY next_eligible_at ASC
+         LIMIT 100`,
       )
       .bind(now.toISOString())
       .all();
@@ -231,15 +265,23 @@ async function processDueReminders() {
   }
 }
 
-/** Sends (or reschedules) a single due reminder. Independent of every other reminder, so safe to run concurrently. */
+/**
+ * Sends (or reschedules) a single due reminder.
+ */
 async function processReminder(reminder, now) {
   try {
     if (!isWithinActiveWindow(reminder, now)) {
       const next = nextWindowStart(reminder, now);
+
       await db
-        .prepare(`UPDATE reminders SET next_eligible_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE reminders
+           SET next_eligible_at = ?
+           WHERE id = ?`,
+        )
         .bind(next.toISOString(), reminder.id)
         .run();
+
       return;
     }
 
@@ -249,22 +291,25 @@ async function processReminder(reminder, now) {
       console.error(`Failed to send reminder ${reminder.id}:`, err.message);
     }
 
-    // Advance/disable regardless of send success. Otherwise a reminder
-    // whose channel was deleted (or any other persistent send failure)
-    // never moves past next_eligible_at and gets retried every cron
-    // tick forever, crowding out every other due reminder.
     if (reminder.type === "once") {
       await db
         .prepare(
-          `UPDATE reminders SET enabled = 0, last_sent_at = ? WHERE id = ?`,
+          `UPDATE reminders
+           SET enabled = 0,
+               last_sent_at = ?
+           WHERE id = ?`,
         )
         .bind(now.toISOString(), reminder.id)
         .run();
     } else {
       const next = computeNextEligible(reminder, now);
+
       await db
         .prepare(
-          `UPDATE reminders SET last_sent_at = ?, next_eligible_at = ? WHERE id = ?`,
+          `UPDATE reminders
+           SET last_sent_at = ?,
+               next_eligible_at = ?
+           WHERE id = ?`,
         )
         .bind(now.toISOString(), next.toISOString(), reminder.id)
         .run();
@@ -274,14 +319,89 @@ async function processReminder(reminder, now) {
   }
 }
 
+/**
+ * Process birthdays that are due today.
+ *
+ * Birthday reminders always use UTC:
+ *
+ *   month = UTC month
+ *   day   = UTC day
+ *   send  = 09:00 UTC
+ *
+ * The worker runs every minute, so we don't store a next_eligible_at.
+ * last_sent_year makes the operation idempotent.
+ */
+async function processDueBirthdays() {
+  const now = new Date();
+
+  const month = now.getUTCMonth() + 1;
+  const day = now.getUTCDate();
+  const year = now.getUTCFullYear();
+
+  // Birthday reminders are only sent at 09:00 UTC.
+  if (now.getUTCHours() !== 9) {
+    return;
+  }
+
+  try {
+    const { results: birthdays } = await db
+      .prepare(
+        `SELECT *
+         FROM birthdays
+         WHERE enabled = 1
+           AND month = ?
+           AND day = ?
+           AND (last_sent_year IS NULL OR last_sent_year < ?)
+         ORDER BY id ASC
+         LIMIT 100`,
+      )
+      .bind(month, day, year)
+      .all();
+
+    if (!birthdays.length) {
+      return;
+    }
+
+    await mapWithConcurrency(
+      birthdays,
+      REMINDER_PROCESSING_CONCURRENCY,
+      (birthday) => processBirthday(birthday, now, year),
+    );
+  } catch (err) {
+    console.error("Error processing birthdays:", err);
+  }
+}
+
+/**
+ * Sends a single birthday message.
+ *
+ * The year is only marked as sent after Discord successfully accepts
+ * the message. If Discord fails, the birthday remains eligible and
+ * can be retried on the next scheduler tick.
+ */
+async function processBirthday(birthday, now, year) {
+  try {
+    await sendBirthdayMessage(client, birthday);
+
+    await db
+      .prepare(
+        `UPDATE birthdays
+         SET last_sent_year = ?,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(year, now.toISOString(), birthday.id)
+      .run();
+  } catch (err) {
+    console.error(`Failed to send birthday ${birthday.id}:`, err.message);
+  }
+}
+
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection:", reason);
 });
 
 process.on("uncaughtException", (err) => {
-  // Log and keep running rather than letting Node's default behavior
-  // (crash the process) take down every in-flight reminder/interaction.
-  // If a given error keeps recurring, it'll show up in these logs.
   console.error("Uncaught exception:", err);
 });
 

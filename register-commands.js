@@ -4,11 +4,10 @@
  *
  * Registers commands globally. Global commands can take up to an hour to
  * propagate; for instant testing during development, register per-guild
- * instead (swap the URL below for
- * /applications/{app_id}/guilds/{guild_id}/commands).
+ * instead.
  */
 
-import { commandRegistry, commandChoices } from "./src/commandRegistry.js"; // adjust path to match your project layout
+import { commandRegistry, commandChoices } from "./src/commandRegistry.js";
 
 const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID;
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -18,9 +17,7 @@ if (!APPLICATION_ID || !TOKEN) {
   process.exit(1);
 }
 
-// Human-friendly descriptions for each fun command. Falls back to a generic
-// description if a name isn't listed here, so new commandRegistry entries
-// don't need to be added twice.
+// Human-friendly descriptions for each fun command.
 const FUN_COMMAND_DESCRIPTIONS = {
   compliment: "Get a random compliment",
   fortune: "Get a random fortune",
@@ -30,7 +27,7 @@ const FUN_COMMAND_DESCRIPTIONS = {
   thought: "Get a random thought",
 };
 
-// One slash command per entry in commandRegistry (compliment, fortune, etc.)
+// One slash command per entry in commandRegistry.
 const funCommands = Object.keys(commandRegistry).map((name) => ({
   name,
   description: FUN_COMMAND_DESCRIPTIONS[name] || `Get a random ${name}`,
@@ -38,6 +35,7 @@ const funCommands = Object.keys(commandRegistry).map((name) => ({
 
 const commands = [
   ...funCommands,
+
   {
     name: "remind",
     description: "Manage reminders",
@@ -74,6 +72,7 @@ const commands = [
           },
         ],
       },
+
       {
         type: 1,
         name: "repeat",
@@ -119,6 +118,7 @@ const commands = [
           },
         ],
       },
+
       {
         type: 1,
         name: "command",
@@ -129,7 +129,7 @@ const commands = [
             name: "command",
             description: "Which command to run",
             required: true,
-            choices: commandChoices, // compliment, fortune, funfact, etc.
+            choices: commandChoices,
           },
           {
             type: 3,
@@ -165,18 +165,84 @@ const commands = [
           },
         ],
       },
+
       {
         type: 1,
         name: "list",
         description: "List active reminders in this server",
       },
+
       {
         type: 1,
         name: "delete",
         description: "Delete a reminder by ID",
         options: [
-          { type: 3, name: "id", description: "Reminder ID", required: true },
+          {
+            type: 3,
+            name: "id",
+            description: "Reminder ID",
+            required: true,
+          },
         ],
+      },
+    ],
+  },
+
+  {
+    name: "birthday",
+    description: "Manage birthday reminders",
+    options: [
+      {
+        type: 1, // SUB_COMMAND
+        name: "set",
+        description: "Set a birthday reminder",
+        options: [
+          {
+            type: 6, // USER
+            name: "user",
+            description: "User whose birthday this is",
+            required: true,
+          },
+          {
+            type: 3, // STRING
+            name: "date",
+            description: "Birthday date in DD/MM format",
+            required: true,
+          },
+          {
+            type: 7, // CHANNEL
+            name: "channel",
+            description: "Channel to send the birthday message in",
+            required: true,
+            channel_types: [0], // GUILD_TEXT
+          },
+          {
+            type: 8, // ROLE
+            name: "role",
+            description: "Role to mention with the birthday message",
+            required: false,
+          },
+        ],
+      },
+
+      {
+        type: 1, // SUB_COMMAND
+        name: "delete",
+        description: "Delete a birthday reminder",
+        options: [
+          {
+            type: 6, // USER
+            name: "user",
+            description: "User whose birthday reminder to delete",
+            required: true,
+          },
+        ],
+      },
+
+      {
+        type: 1, // SUB_COMMAND
+        name: "list",
+        description: "List birthday reminders",
       },
     ],
   },

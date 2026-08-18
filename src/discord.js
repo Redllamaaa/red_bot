@@ -47,3 +47,21 @@ export async function sendReminderMessage(client, reminder) {
     ],
   });
 }
+
+export async function sendBirthdayMessage(client, birthday) {
+  const channel = await client.channels.fetch(birthday.channel_id);
+
+  if (!channel || !channel.isTextBased()) {
+    throw new Error(
+      `Birthday channel ${birthday.channel_id} is missing or not text-based`,
+    );
+  }
+
+  const content = birthday.role_id
+    ? `<@&${birthday.role_id}> 🎂 Happy birthday <@${birthday.user_id}>!`
+    : `🎂 Happy birthday <@${birthday.user_id}>!`;
+
+  await channel.send({
+    content,
+  });
+}
