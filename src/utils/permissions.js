@@ -6,6 +6,11 @@ export const ROLE_PERMISSIONS = {
     users: ["661140312248549376"],
     allowAdmin: true,
   },
+  MANAGE_BIRTHDAYS: {
+    roles: [process.env.REMINDER_REPEAT_ROLE_ID],
+    users: ["661140312248549376"],
+    allowAdmin: true,
+  },
 };
 
 export function hasRole(interaction, roleId) {
