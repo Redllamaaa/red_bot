@@ -363,8 +363,8 @@ function parseBirthdayDate(input) {
     return null;
   }
 
-  const month = Number(match[1]);
-  const day = Number(match[2]);
+  const day = Number(match[1]);
+  const month = Number(match[2]);
 
   if (month < 1 || month > 12) {
     return null;
@@ -393,7 +393,7 @@ function formatBirthdayDate(month, day) {
 export async function handleBirthdaySet(interaction) {
   const permissionError = checkPermission(
     interaction,
-    "MANAGE_GUILD",
+    "MANAGE_BIRTHDAYS",
     "You don't have permission to manage birthday reminders.",
   );
 
@@ -483,7 +483,7 @@ export async function handleBirthdaySet(interaction) {
 export async function handleBirthdayDelete(interaction) {
   const permissionError = checkPermission(
     interaction,
-    "MANAGE_GUILD",
+    "MANAGE_BIRTHDAYS",
     "You don't have permission to manage birthday reminders.",
   );
 
