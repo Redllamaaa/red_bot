@@ -145,7 +145,7 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
       `INSERT INTO reminders
      (id, guild_id, channel_id, created_by, type, title, message, command_name, ping_role_id,
       interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
-      next_eligible_at, enabled)
+      next_eligible_at, snooze_enabled, enabled)
      VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
     .bind(
@@ -163,6 +163,7 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
       activeEnd,
       timezone,
       nextEligible.toISOString(),
+      payload.snoozeEnabled ? 1 : 0,
     )
     .run();
 
@@ -200,6 +201,8 @@ export async function handleRemindCommand(interaction) {
       commandName,
       role: opts.role,
       timezone: opts.timezone,
+
+      snoozeEnabled: false,
     },
   );
 
@@ -221,12 +224,13 @@ export async function handleRemindOnce(interaction) {
   const id = crypto.randomUUID();
   const title = truncate(opts.title || "Reminder", EMBED_LIMITS.TITLE);
   const message = truncate(opts.message, EMBED_LIMITS.DESCRIPTION);
+  const snoozeEnabled = opts.snooze === true;
   await db
     .prepare(
       `INSERT INTO reminders
-     (id, guild_id, channel_id, created_by, type, title, message, ping_role_id,
-      fire_at, next_eligible_at, enabled)
-     VALUES (?, ?, ?, ?, 'once', ?, ?, ?, ?, ?, 1)`,
+      (id, guild_id, channel_id, created_by, type, title, message, ping_role_id,
+      fire_at, next_eligible_at, snooze_enabled, enabled)
+      VALUES (?, ?, ?, ?, 'once', ?, ?, ?, ?, ?, ?, 1)`,
     )
     .bind(
       id,
@@ -236,6 +240,7 @@ export async function handleRemindOnce(interaction) {
       title,
       message,
       opts.role || null,
+      snoozeEnabled ? 1 : 0,
       fireAt.toISOString(),
       fireAt.toISOString(),
     )
@@ -266,6 +271,7 @@ export async function handleRemindRepeat(interaction) {
       message: opts.message,
       role: opts.role,
       timezone: opts.timezone,
+      snoozeEnabled: opts.snooze === true,
     },
   );
 

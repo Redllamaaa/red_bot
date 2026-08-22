@@ -1,6 +1,7 @@
 import { runFunCommand } from "./commandRegistry.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 
 /**
  * Sends a message (with optional embed + role ping) to a channel using discord.js.
@@ -25,6 +26,18 @@ export async function sendReminderMessage(client, reminder) {
     ? { roles: [reminder.ping_role_id] }
     : { users: [reminder.created_by] };
 
+  const components =
+    reminder.snooze_enabled === 1
+      ? [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`reminder:snooze:${reminder.id}`)
+              .setLabel("Snooze 1 Hour")
+              .setStyle(ButtonStyle.Secondary),
+          ),
+        ]
+      : [];
+
   await channel.send({
     content,
     allowedMentions,
@@ -45,6 +58,7 @@ export async function sendReminderMessage(client, reminder) {
         },
       },
     ],
+    components,
   });
 }
 

@@ -94,6 +94,80 @@ function scheduleNextReminderCheck(delayMs) {
 }
 
 client.on("interactionCreate", async (interaction) => {
+  if (interaction.isButton()) {
+    if (!interaction.customId.startsWith("reminder:snooze:")) {
+      return;
+    }
+
+    const reminderId = interaction.customId.slice("reminder:snooze:".length);
+
+    try {
+      const { results } = await db
+        .prepare(
+          `SELECT id, type, snooze_enabled, enabled
+           FROM reminders
+           WHERE id = ?`,
+        )
+        .bind(reminderId)
+        .all();
+
+      const reminder = results[0];
+
+      if (!reminder) {
+        await interaction.reply({
+          content: "That reminder no longer exists.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (!reminder.enabled) {
+        await interaction.reply({
+          content: "That reminder is no longer active.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (!reminder.snooze_enabled) {
+        await interaction.reply({
+          content: "Snoozing is disabled for this reminder.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const snoozedUntil = new Date(Date.now() + 60 * 60 * 1000);
+
+      await db
+        .prepare(
+          `UPDATE reminders
+           SET next_eligible_at = ?
+           WHERE id = ?`,
+        )
+        .bind(snoozedUntil.toISOString(), reminderId)
+        .run();
+
+      await interaction.reply({
+        content: `⏰ Snoozed until <t:${Math.floor(
+          snoozedUntil.getTime() / 1000,
+        )}:t>.`,
+        ephemeral: true,
+      });
+    } catch (err) {
+      console.error("Failed to snooze reminder:", err);
+
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "Something went wrong while snoozing that reminder.",
+          ephemeral: true,
+        });
+      }
+    }
+
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   try {
@@ -285,35 +359,46 @@ async function processReminder(reminder, now) {
       return;
     }
 
-    try {
-      await sendReminderMessage(client, reminder);
-    } catch (err) {
-      console.error(`Failed to send reminder ${reminder.id}:`, err.message);
-    }
+    await sendReminderMessage(client, reminder);
 
     if (reminder.type === "once") {
-      await db
-        .prepare(
-          `UPDATE reminders
-           SET enabled = 0,
-               last_sent_at = ?
-           WHERE id = ?`,
-        )
-        .bind(now.toISOString(), reminder.id)
-        .run();
-    } else {
-      const next = computeNextEligible(reminder, now);
+      if (reminder.snooze_enabled) {
+        // Keep the reminder active so the user can snooze it.
+        // The reminder will be disabled when it fires again.
+        await db
+          .prepare(
+            `UPDATE reminders
+             SET last_sent_at = ?
+             WHERE id = ?`,
+          )
+          .bind(now.toISOString(), reminder.id)
+          .run();
+      } else {
+        await db
+          .prepare(
+            `UPDATE reminders
+             SET enabled = 0,
+                 last_sent_at = ?
+             WHERE id = ?`,
+          )
+          .bind(now.toISOString(), reminder.id)
+          .run();
+      }
 
-      await db
-        .prepare(
-          `UPDATE reminders
-           SET last_sent_at = ?,
-               next_eligible_at = ?
-           WHERE id = ?`,
-        )
-        .bind(now.toISOString(), next.toISOString(), reminder.id)
-        .run();
+      return;
     }
+
+    const next = computeNextEligible(reminder, now);
+
+    await db
+      .prepare(
+        `UPDATE reminders
+         SET last_sent_at = ?,
+             next_eligible_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now.toISOString(), next.toISOString(), reminder.id)
+      .run();
   } catch (err) {
     console.error(`Failed to process reminder ${reminder.id}:`, err.message);
   }

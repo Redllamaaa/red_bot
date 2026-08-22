@@ -59,6 +59,12 @@ const commands = [
             required: true,
           },
           {
+            type: 5,
+            name: "snooze",
+            description: "Allow this reminder to be snoozed for 1 hour",
+            required: false,
+          },
+          {
             type: 3,
             name: "title",
             description: "Embed title (default: Reminder)",
@@ -102,6 +108,12 @@ const commands = [
             name: "timezone",
             description:
               "IANA timezone for the active window, e.g. America/New_York",
+            required: false,
+          },
+          {
+            type: 5,
+            name: "snooze",
+            description: "Allow this reminder to be snoozed for 1 hour",
             required: false,
           },
           {
