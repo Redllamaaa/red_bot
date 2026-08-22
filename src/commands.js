@@ -146,7 +146,7 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
      (id, guild_id, channel_id, created_by, type, title, message, command_name, ping_role_id,
       interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
       next_eligible_at, snooze_enabled, enabled)
-     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
     .bind(
       id,
