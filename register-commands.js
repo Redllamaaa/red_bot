@@ -1,10 +1,6 @@
 /**
  * Run once (and again whenever you change command definitions):
- *   DISCORD_TOKEN=... DISCORD_APPLICATION_ID=... node register-commands.js
- *
- * Registers commands globally. Global commands can take up to an hour to
- * propagate; for instant testing during development, register per-guild
- * instead.
+ * node --env-file=.env register-commands.js
  */
 
 import { commandRegistry, commandChoices } from "./src/commandRegistry.js";
