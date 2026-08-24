@@ -31,7 +31,12 @@ export async function sendReminderMessage(client, reminder) {
       ? [
           new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-              .setCustomId(`reminder:snooze:${reminder.id}`)
+              .setCustomId(`reminder:snooze:30m:${reminder.id}`)
+              .setLabel("Snooze 30 Minutes")
+              .setStyle(ButtonStyle.Secondary),
+
+            new ButtonBuilder()
+              .setCustomId(`reminder:snooze:1h:${reminder.id}`)
               .setLabel("Snooze 1 Hour")
               .setStyle(ButtonStyle.Secondary),
           ),

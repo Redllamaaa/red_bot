@@ -99,7 +99,18 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    const reminderId = interaction.customId.slice("reminder:snooze:".length);
+    const [, , duration, reminderId] = interaction.customId.split(":");
+
+    const snoozeMinutes =
+      duration === "30m" ? 30 : duration === "1h" ? 60 : null;
+
+    if (!snoozeMinutes) {
+      await interaction.reply({
+        content: "Invalid snooze duration.",
+        ephemeral: true,
+      });
+      return;
+    }
 
     try {
       const { results } = await db
@@ -137,7 +148,7 @@ client.on("interactionCreate", async (interaction) => {
         return;
       }
 
-      const snoozedUntil = new Date(Date.now() + 60 * 60 * 1000);
+      const snoozedUntil = new Date(Date.now() + snoozeMinutes * 60 * 1000);
 
       await db
         .prepare(
@@ -149,7 +160,7 @@ client.on("interactionCreate", async (interaction) => {
         .run();
 
       await interaction.reply({
-        content: `⏰ Snoozed until <t:${Math.floor(
+        content: `⏰ Snoozed for ${snoozeMinutes} minutes, until <t:${Math.floor(
           snoozedUntil.getTime() / 1000,
         )}:t>.`,
         ephemeral: true,
@@ -423,8 +434,8 @@ async function processDueBirthdays() {
   const day = now.getUTCDate();
   const year = now.getUTCFullYear();
 
-  // Birthday reminders are only sent at 09:00 UTC.
-  if (now.getUTCHours() !== 9) {
+  // Birthday reminders are only sent at 10:00 UTC.
+  if (now.getUTCHours() !== 10) {
     return;
   }
 
