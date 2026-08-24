@@ -2,7 +2,7 @@ const ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
 const DATABASE_ID = process.env.CF_DATABASE_ID;
 const API_TOKEN = process.env.CF_API_TOKEN;
 
-const D1_TIMEOUT_MS = 10000;
+const D1_TIMEOUT_MS = 30000;
 
 async function queryD1(sql, params = []) {
   const controller = new AbortController();
