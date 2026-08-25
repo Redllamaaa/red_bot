@@ -373,18 +373,29 @@ async function processReminder(reminder, now) {
     await sendReminderMessage(client, reminder);
 
     if (reminder.type === "once") {
-      if (reminder.snooze_enabled) {
-        // Keep the reminder active so the user can snooze it.
-        // The reminder will be disabled when it fires again.
+      if (reminder.snooze_enabled && !reminder.last_sent_at) {
+        // First send: keep the reminder active so the user can snooze it,
+        // but push next_eligible_at far into the future so the scheduler
+        // (which selects on `next_eligible_at <= now`) doesn't immediately
+        // re-select and re-send this row on the very next tick. If the
+        // user snoozes, the button handler in this file overwrites
+        // next_eligible_at with the real snooze time.
+        const farFuture = new Date(
+          now.getTime() + 100 * 365 * 24 * 60 * 60 * 1000,
+        );
+
         await db
           .prepare(
             `UPDATE reminders
-             SET last_sent_at = ?
+             SET last_sent_at = ?,
+                 next_eligible_at = ?
              WHERE id = ?`,
           )
-          .bind(now.toISOString(), reminder.id)
+          .bind(now.toISOString(), farFuture.toISOString(), reminder.id)
           .run();
       } else {
+        // Either snooze was never enabled, or this is a re-fire after a
+        // snooze fired again — either way, it's done now.
         await db
           .prepare(
             `UPDATE reminders
