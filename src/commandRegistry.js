@@ -21,8 +21,13 @@ async function fetchFunApi(endpoint) {
   }
 
   if (!res.ok) throw new Error(`${endpoint} API returned ${res.status}`);
+
   const data = await res.json();
-  return Object.values(data.data)[0]; // grabs whichever field it returns
+  const values = data?.data ? Object.values(data.data) : [];
+  if (!values.length) {
+    throw new Error(`${endpoint} API returned an unexpected response shape`);
+  }
+  return values[0]; // grabs whichever field it returns
 }
 
 export const commandRegistry = {
