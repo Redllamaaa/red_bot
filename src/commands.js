@@ -43,28 +43,43 @@ function parseDuration(str) {
   return null;
 }
 
-/** Parses "8-24", "8am-12am", "22-6" style active-hour ranges into {start, end}. */
+/**
+ * Parses "8-24", "8am-12am", "22-6" style active-hour ranges into
+ * { start, end }, or returns null if the string isn't a valid "A-B" range
+ * (missing dash, unrecognized hour, etc.) so the caller can show a
+ * friendly error instead of crashing.
+ */
 function parseActiveHours(str) {
-  const [a, b] = str.split("-").map((s) => s.trim());
+  const parts = String(str || "").split("-");
+  if (parts.length !== 2) return null;
+
+  const [a, b] = parts.map((s) => s.trim());
+  if (!a || !b) return null;
+
   const parseHour = (s) => {
-    const ampm = /am|pm/i.exec(s);
+    if (/^24$/.test(s)) return 24;
+    if (!/^\d{1,2}\s*(am|pm)?$/i.test(s)) return null;
+
     let h = parseInt(s, 10);
-    if (ampm) {
-      const isPM = /pm/i.test(s);
-      if (isPM && h !== 12) h += 12;
-      if (!isPM && h === 12) h = 0;
-    }
-    return ((h % 24) + 24) % 24;
+    const isPM = /pm/i.test(s);
+    const isAM = /am/i.test(s);
+    if (isPM && h !== 12) h += 12;
+    if (isAM && h === 12) h = 0;
+    if (h < 0 || h > 24) return null;
+    return h;
   };
-  return {
-    start: parseHour(a),
-    end:
-      b === "24" || (/12am$/i.test(b) && a !== b)
-        ? b.match(/^24$/)
-          ? 24
-          : parseHour(b)
-        : parseHour(b),
-  };
+
+  const start = parseHour(a);
+  let end = parseHour(b);
+  if (start === null || end === null) return null;
+
+  // An end of "12am"/"0" almost always means "through midnight" (e.g.
+  // "8-12am" = active 8am-midnight), not "through the very start of the
+  // day" — except when start is also 0, which is the deliberate
+  // "always active" case handled by isWithinActiveWindow.
+  if (end === 0 && start !== 0) end = 24;
+
+  return { start, end };
 }
 
 /**
@@ -75,7 +90,7 @@ function parseActiveHours(str) {
  */
 function parseRepeatingScheduleOptions(opts) {
   const scheduleText = String(opts.every || "").trim();
-  const parsedSchedule = parseNaturalSchedule(scheduleText, new Date());
+  const parsedSchedule = parseNaturalSchedule(scheduleText);
   const intervalMinutes =
     parsedSchedule && parsedSchedule.kind === "interval"
       ? parsedSchedule.intervalMinutes
@@ -92,6 +107,12 @@ function parseRepeatingScheduleOptions(opts) {
   let activeEnd = null;
   if (opts.active) {
     const parsed = parseActiveHours(opts.active);
+    if (!parsed) {
+      return {
+        error:
+          "Couldn't parse the active-hours window. Try something like `8-24`, `8am-12am`, or `22-6`.",
+      };
+    }
     activeStart = parsed.start;
     activeEnd = parsed.end;
   }
