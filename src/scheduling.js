@@ -75,41 +75,21 @@ export function parseNaturalDateTime(input, now = new Date()) {
     if (!time) return null;
 
     const base = new Date(now.getTime());
-    const dayOffsetMap = {
-      today: 0,
-      tomorrow: 1,
-      monday: 1,
-      tuesday: 2,
-      wednesday: 3,
-      thursday: 4,
-      friday: 5,
-      saturday: 6,
-      sunday: 0,
-      "next monday": 1,
-      "next tuesday": 2,
-      "next wednesday": 3,
-      "next thursday": 4,
-      "next friday": 5,
-      "next saturday": 6,
-      "next sunday": 7,
-    };
+    let dayOffset;
 
-    let dayOffset = dayOffsetMap[dayName] ?? 0;
     if (dayName === "today") {
       dayOffset = 0;
     } else if (dayName === "tomorrow") {
       dayOffset = 1;
-    } else if (dayName.startsWith("next ")) {
-      const current = base.getUTCDay();
-      const target = weekdays.indexOf(dayName.replace(/^next\s+/, ""));
-      const delta = (target - current + 7) % 7 || 7;
-      dayOffset = delta;
     } else {
+      // Plain weekday ("monday") and "next monday" resolve the same way:
+      // the next upcoming occurrence of that weekday, always at least a
+      // day away (so naming today's weekday means "in 7 days", not
+      // "today" — use "today"/"tomorrow" for that).
+      const targetName = dayName.replace(/^next\s+/, "");
       const current = base.getUTCDay();
-      const target = weekdays.indexOf(dayName);
-      let delta = (target - current + 7) % 7;
-      if (delta === 0) delta = 7;
-      dayOffset = delta;
+      const target = weekdays.indexOf(targetName);
+      dayOffset = (target - current + 7) % 7 || 7;
     }
 
     const candidate = new Date(base);
@@ -219,7 +199,7 @@ function parseMonthlySchedule(input) {
   };
 }
 
-export function parseNaturalSchedule(input, now = new Date()) {
+export function parseNaturalSchedule(input) {
   if (!input || typeof input !== "string") return null;
   const text = input.trim();
   if (!text) return null;
@@ -411,7 +391,7 @@ export function nextWindowStart(reminder, now) {
  */
 export function computeNextEligible(reminder, now) {
   const parsed = reminder.schedule_text
-    ? parseNaturalSchedule(reminder.schedule_text, now)
+    ? parseNaturalSchedule(reminder.schedule_text)
     : null;
   if (parsed) {
     const candidate = nextScheduleOccurrence(parsed, now);
