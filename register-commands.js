@@ -38,6 +38,13 @@ const commands = [
     options: [
       {
         type: 1, // SUB_COMMAND
+        name: "menu",
+        description:
+          "Open a guided menu to create a reminder step by step (good for new users)",
+      },
+
+      {
+        type: 1, // SUB_COMMAND
         name: "once",
         description: "Set a one-off reminder",
         options: [

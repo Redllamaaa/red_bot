@@ -16,6 +16,12 @@ import {
   handleBirthdayCommand,
   handleFunCommand,
 } from "./commands.js";
+import {
+  sendReminderTypeMenu,
+  handleWizardButton,
+  handleWizardModalSubmit,
+  handleWizardSelectMenu,
+} from "./reminderWizard.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
 
@@ -95,6 +101,16 @@ function scheduleNextReminderCheck(delayMs) {
 
 client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
+    // Reminder-creation wizard buttons (type picker, confirm, cancel).
+    if (interaction.customId.startsWith("rw:")) {
+      try {
+        await handleWizardButton(interaction);
+      } catch (err) {
+        console.error("Reminder wizard button error:", err);
+      }
+      return;
+    }
+
     if (!interaction.customId.startsWith("reminder:snooze:")) {
       return;
     }
@@ -179,6 +195,28 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId.startsWith("rw:modal:")) {
+      try {
+        await handleWizardModalSubmit(interaction);
+      } catch (err) {
+        console.error("Reminder wizard modal error:", err);
+      }
+    }
+    return;
+  }
+
+  if (interaction.isStringSelectMenu() || interaction.isRoleSelectMenu()) {
+    if (interaction.customId.startsWith("rw:")) {
+      try {
+        await handleWizardSelectMenu(interaction);
+      } catch (err) {
+        console.error("Reminder wizard select error:", err);
+      }
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   try {
@@ -206,6 +244,31 @@ client.on("interactionCreate", async (interaction) => {
       interaction.commandName !== "remind" &&
       interaction.commandName !== "birthday"
     ) {
+      return;
+    }
+
+    // The guided reminder wizard replies with buttons, not the plain
+    // embed the rest of this handler builds below, so it's handled
+    // separately before the generic deferReply/editReply flow.
+    if (
+      interaction.commandName === "remind" &&
+      interaction.options.getSubcommand() === "menu"
+    ) {
+      await interaction.deferReply({ ephemeral: true });
+
+      try {
+        await sendReminderTypeMenu(interaction);
+      } catch (err) {
+        console.error("Reminder wizard menu error:", err);
+        await interaction.editReply({
+          ...createEmbed({
+            title: "Error",
+            description: "Couldn't open the reminder menu.",
+            color: COLORS.ERROR,
+          }),
+        });
+      }
+
       return;
     }
 

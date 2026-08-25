@@ -130,8 +130,16 @@ function parseRepeatingScheduleOptions(opts) {
  * Inserts a repeating reminder row (used for both plain-message repeats
  * and command repeats — they only differ in which columns carry the
  * payload). `payload` is `{ title, message, commandName }`.
+ *
+ * Takes plain identifying fields rather than a raw interaction so it can
+ * be called from both the adapted slash-command shape and the reminder
+ * wizard's raw Discord.js interactions.
  */
-async function insertRepeatingReminder(interaction, schedule, payload) {
+async function insertRepeatingReminder(
+  { guildId, channelId, userId },
+  schedule,
+  payload,
+) {
   const {
     scheduleText,
     parsedSchedule,
@@ -171,9 +179,9 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
     )
     .bind(
       id,
-      interaction.guild_id,
-      interaction.channel_id,
-      interaction.member?.user?.id || interaction.user?.id,
+      guildId,
+      channelId,
+      userId,
       title,
       message,
       payload.commandName || null,
@@ -196,45 +204,31 @@ async function insertRepeatingReminder(interaction, schedule, payload) {
   return { id, scheduleText, windowText };
 }
 
-export async function handleRemindCommand(interaction) {
-  const permissionError = checkPermission(
-    interaction,
-    "MANAGE_REMINDERS",
-    "You don't have permission to create repeating reminders.",
-  );
-  if (permissionError) return permissionError;
+/**
+ * Core reminder-creation functions.
+ *
+ * These take plain field values (not a Discord interaction shape) so they
+ * can be called identically from:
+ *   - the slash-command handlers below (which extract fields via optionMap)
+ *   - the reminder wizard (reminderWizard.js), which collects the same
+ *     fields via buttons/modals/select-menus instead of slash options
+ *
+ * Permission checks are NOT done here — callers (slash adapters or the
+ * wizard) are responsible for calling checkPermission first, since both
+ * have access to a real interaction/member to check against.
+ */
 
-  const opts = optionMap(interaction);
-  const commandName = opts.command;
-  if (!commandRegistry[commandName]) {
-    return { error: `Unknown command \`${commandName}\`.` };
-  }
-
-  const schedule = parseRepeatingScheduleOptions(opts);
-  if (schedule.error) return schedule;
-
-  const { id, scheduleText, windowText } = await insertRepeatingReminder(
-    interaction,
-    schedule,
-    {
-      title: opts.title || commandName,
-      message: "", // message stays NOT NULL-safe; command_name drives the content instead
-      commandName,
-      role: opts.role,
-      timezone: opts.timezone,
-
-      snoozeEnabled: false,
-    },
-  );
-
-  return {
-    success: `Repeating command reminder set: \`${commandName}\` ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
-  };
-}
-
-export async function handleRemindOnce(interaction) {
-  const opts = optionMap(interaction);
-  const fireAt = parseNaturalDateTime(opts.time, new Date());
+export async function createOnceReminder({
+  guildId,
+  channelId,
+  userId,
+  message,
+  time,
+  title,
+  role,
+  snooze,
+}) {
+  const fireAt = parseNaturalDateTime(time, new Date());
   if (!fireAt) {
     return {
       error:
@@ -243,9 +237,9 @@ export async function handleRemindOnce(interaction) {
   }
 
   const id = crypto.randomUUID();
-  const title = truncate(opts.title || "Reminder", EMBED_LIMITS.TITLE);
-  const message = truncate(opts.message, EMBED_LIMITS.DESCRIPTION);
-  const snoozeEnabled = opts.snooze === true;
+  const finalTitle = truncate(title || "Reminder", EMBED_LIMITS.TITLE);
+  const finalMessage = truncate(message, EMBED_LIMITS.DESCRIPTION);
+
   await db
     .prepare(
       `INSERT INTO reminders
@@ -255,13 +249,13 @@ export async function handleRemindOnce(interaction) {
     )
     .bind(
       id,
-      interaction.guild_id,
-      interaction.channel_id,
-      interaction.member?.user?.id || interaction.user?.id,
-      title,
-      message,
-      opts.role || null,
-      snoozeEnabled ? 1 : 0,
+      guildId,
+      channelId,
+      userId,
+      finalTitle,
+      finalMessage,
+      role || null,
+      snooze ? 1 : 0,
       fireAt.toISOString(),
       fireAt.toISOString(),
     )
@@ -270,6 +264,118 @@ export async function handleRemindOnce(interaction) {
   return {
     success: `One-off reminder set for <t:${Math.floor(fireAt.getTime() / 1000)}:F>.`,
   };
+}
+
+export async function createRepeatingReminder({
+  guildId,
+  channelId,
+  userId,
+  message,
+  every,
+  active,
+  timezone,
+  title,
+  role,
+  snooze,
+}) {
+  const schedule = parseRepeatingScheduleOptions({ every, active });
+  if (schedule.error) return schedule;
+
+  const { id, scheduleText, windowText } = await insertRepeatingReminder(
+    { guildId, channelId, userId },
+    schedule,
+    {
+      title: title || "Reminder",
+      message,
+      role,
+      timezone,
+      snoozeEnabled: snooze === true,
+    },
+  );
+
+  return {
+    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
+  };
+}
+
+export async function createCommandReminder({
+  guildId,
+  channelId,
+  userId,
+  commandName,
+  every,
+  active,
+  timezone,
+  title,
+  role,
+}) {
+  if (!commandRegistry[commandName]) {
+    return { error: `Unknown command \`${commandName}\`.` };
+  }
+
+  const schedule = parseRepeatingScheduleOptions({ every, active });
+  if (schedule.error) return schedule;
+
+  const { id, scheduleText, windowText } = await insertRepeatingReminder(
+    { guildId, channelId, userId },
+    schedule,
+    {
+      title: title || commandName,
+      message: "", // message stays NOT NULL-safe; command_name drives the content instead
+      commandName,
+      role,
+      timezone,
+      snoozeEnabled: false,
+    },
+  );
+
+  return {
+    success: `Repeating command reminder set: \`${commandName}\` ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
+  };
+}
+
+/**
+ * Slash-command handlers. These are now thin adapters: pull fields out of
+ * the adapted interaction shape, run any permission check, then delegate
+ * to the core create*Reminder functions above.
+ */
+
+export async function handleRemindCommand(interaction) {
+  const permissionError = checkPermission(
+    interaction,
+    "MANAGE_REMINDERS",
+    "You don't have permission to create repeating reminders.",
+  );
+  if (permissionError) return permissionError;
+
+  const opts = optionMap(interaction);
+
+  return createCommandReminder({
+    guildId: interaction.guild_id,
+    channelId: interaction.channel_id,
+    userId: interaction.member?.user?.id || interaction.user?.id,
+    commandName: opts.command,
+    every: opts.every,
+    active: opts.active,
+    timezone: opts.timezone,
+    title: opts.title,
+    role: opts.role,
+  });
+}
+
+export async function handleRemindOnce(interaction) {
+  const opts = optionMap(interaction);
+
+  return createOnceReminder({
+    guildId: interaction.guild_id,
+    channelId: interaction.channel_id,
+    userId: interaction.member?.user?.id || interaction.user?.id,
+    message: opts.message,
+    time: opts.time,
+    title: opts.title,
+    role: opts.role,
+    snooze: opts.snooze === true,
+  });
 }
 
 export async function handleRemindRepeat(interaction) {
@@ -281,24 +387,19 @@ export async function handleRemindRepeat(interaction) {
   if (permissionError) return permissionError;
 
   const opts = optionMap(interaction);
-  const schedule = parseRepeatingScheduleOptions(opts);
-  if (schedule.error) return schedule;
 
-  const { id, scheduleText, windowText } = await insertRepeatingReminder(
-    interaction,
-    schedule,
-    {
-      title: opts.title || "Reminder",
-      message: opts.message,
-      role: opts.role,
-      timezone: opts.timezone,
-      snoozeEnabled: opts.snooze === true,
-    },
-  );
-
-  return {
-    success: `Repeating reminder set: ${scheduleText}${windowText}. ID: \`${id.slice(0, 8)}\``,
-  };
+  return createRepeatingReminder({
+    guildId: interaction.guild_id,
+    channelId: interaction.channel_id,
+    userId: interaction.member?.user?.id || interaction.user?.id,
+    message: opts.message,
+    every: opts.every,
+    active: opts.active,
+    timezone: opts.timezone,
+    title: opts.title,
+    role: opts.role,
+    snooze: opts.snooze === true,
+  });
 }
 
 export async function handleRemindList(interaction) {
