@@ -255,9 +255,9 @@ export async function createOnceReminder({
       finalTitle,
       finalMessage,
       role || null,
+      fireAt.toISOString(),
+      fireAt.toISOString(),
       snooze ? 1 : 0,
-      fireAt.toISOString(),
-      fireAt.toISOString(),
     )
     .run();
 
@@ -604,7 +604,7 @@ export async function handleBirthdaySet(interaction) {
     success: `Birthday reminder set for <@${userId}> on ${formatBirthdayDate(
       date.month,
       date.day,
-    )}. It will be sent at **09:00 UTC**.`,
+    )}. It will be sent at **10:00 UTC**.`,
   };
 }
 

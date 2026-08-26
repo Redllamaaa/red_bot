@@ -84,13 +84,14 @@ function expiredMessage() {
   };
 }
 
-function textRow(customId, label, style, required, value) {
+function textRow(customId, label, style, required, value, placeholder) {
   const input = new TextInputBuilder()
     .setCustomId(customId)
     .setLabel(label)
     .setStyle(style)
     .setRequired(required);
   if (value) input.setValue(value);
+  if (placeholder) input.setPlaceholder(placeholder);
   return new ActionRowBuilder().addComponents(input);
 }
 
@@ -133,9 +134,11 @@ function buildDetailsModal(type, sessionId) {
     rows.push(
       textRow(
         "every",
-        "Schedule (e.g. every week, every friday at 20, 3h)",
+        "Schedule",
         TextInputStyle.Short,
         true,
+        null,
+        "e.g. every week, every friday at 20, 3h",
       ),
     );
     rows.push(
@@ -149,9 +152,11 @@ function buildDetailsModal(type, sessionId) {
     rows.push(
       textRow(
         "timezone",
-        "Timezone, e.g. America/New_York (optional)",
+        "Timezone (optional)",
         TextInputStyle.Short,
         false,
+        null,
+        "e.g. America/New_York",
       ),
     );
     rows.push(
@@ -161,9 +166,11 @@ function buildDetailsModal(type, sessionId) {
     rows.push(
       textRow(
         "every",
-        "Schedule (e.g. every week, every friday at 20, 3h)",
+        "Schedule",
         TextInputStyle.Short,
         true,
+        null,
+        "e.g. every week, every friday at 20, 3h",
       ),
     );
     rows.push(
@@ -177,17 +184,21 @@ function buildDetailsModal(type, sessionId) {
     rows.push(
       textRow(
         "timezone",
-        "Timezone, e.g. America/New_York (optional)",
+        "Timezone (optional)",
         TextInputStyle.Short,
         false,
+        null,
+        "e.g. America/New_York",
       ),
     );
     rows.push(
       textRow(
         "title",
-        "Embed title (optional, default: the command name)",
+        "Embed title (optional)",
         TextInputStyle.Short,
         false,
+        null,
+        "Default: the command name",
       ),
     );
   }
