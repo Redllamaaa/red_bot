@@ -5,6 +5,18 @@ const API_TOKEN = process.env.CF_API_TOKEN;
 const D1_TIMEOUT_MS = 30000;
 const D1_MAX_RETRIES = 3;
 
+const NETWORK_ERROR_CODES = new Set([
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "ECONNRESET",
+]);
+
+function isTransientNetworkError(err) {
+  return NETWORK_ERROR_CODES.has(err.cause?.code);
+}
+
 async function queryD1(sql, params = []) {
   for (let attempt = 1; attempt <= D1_MAX_RETRIES; attempt++) {
     const controller = new AbortController();
@@ -49,12 +61,22 @@ async function queryD1(sql, params = []) {
       return data.result[0];
     } catch (err) {
       const isTimeout = err.name === "AbortError";
+      const isNetworkError = isTransientNetworkError(err);
       const isLastAttempt = attempt === D1_MAX_RETRIES;
 
       if (isLastAttempt) {
         if (isTimeout) {
           throw new Error(
             `D1 request timed out after ${D1_TIMEOUT_MS}ms (${D1_MAX_RETRIES} attempts)`,
+          );
+        }
+
+        if (isNetworkError) {
+          // Transient DNS/connection blip that outlasted our retry window.
+          // Not a D1/application problem — log quietly, let the caller's
+          // normal "skip this tick" handling take it from here.
+          console.warn(
+            `D1 request failed after ${D1_MAX_RETRIES} attempts due to a transient network error (${err.cause.code}): ${err.message}`,
           );
         }
 
