@@ -256,7 +256,7 @@ function buildReviewMessage(session) {
           .addOptions(
             { label: "No snooze button", value: "no", default: !data.snooze },
             {
-              label: "Add a snooze button",
+              label: "Add Snooze buttons",
               value: "yes",
               default: !!data.snooze,
             },
