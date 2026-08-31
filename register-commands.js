@@ -95,7 +95,7 @@ const commands = [
           },
           {
             type: 3,
-            name: "every",
+            name: "time",
             description:
               "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
             required: true,
@@ -148,7 +148,7 @@ const commands = [
           },
           {
             type: 3,
-            name: "every",
+            name: "time",
             description:
               "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
             required: true,
