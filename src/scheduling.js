@@ -155,13 +155,34 @@ function parseClockTime(hourText, minuteText, ampm) {
   return { hour, minute };
 }
 
-export function parseNaturalDateTime(input, now = new Date()) {
+export function parseNaturalDateTime(
+  input,
+  now = new Date(),
+  timezone = "UTC",
+) {
   if (!input || typeof input !== "string") return null;
   const text = input.trim();
   if (!text) return null;
 
-  const isoDate = new Date(text);
-  if (!Number.isNaN(isoDate.getTime())) return isoDate;
+  // An explicit offset or "Z" means the instant is unambiguous - trust it
+  // as-is regardless of the reminder's configured timezone.
+  const hasExplicitOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(text);
+  const naiveIsoMatch =
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text);
+
+  if (hasExplicitOffset) {
+    const isoDate = new Date(text);
+    if (!Number.isNaN(isoDate.getTime())) return isoDate;
+  } else if (naiveIsoMatch) {
+    // No offset given ("2026-08-14T15:00:00") - treat the numbers as local
+    // wall-clock time in the reminder's timezone rather than defaulting to
+    // UTC or the server's local time.
+    const [, y, mo, d, h, mi] = naiveIsoMatch.map(Number);
+    return zonedTimeToUtc(y, mo - 1, d, h, mi, timezone);
+  } else {
+    const isoDate = new Date(text);
+    if (!Number.isNaN(isoDate.getTime())) return isoDate;
+  }
 
   const lower = text.toLowerCase();
   const inMatch =
