@@ -227,8 +227,9 @@ export async function createOnceReminder({
   title,
   role,
   snooze,
+  timezone,
 }) {
-  const fireAt = parseNaturalDateTime(time, new Date());
+  const fireAt = parseNaturalDateTime(time, new Date(), timezone || "UTC");
   if (!fireAt) {
     return {
       error:
@@ -375,6 +376,7 @@ export async function handleRemindOnce(interaction) {
     title: opts.title,
     role: opts.role,
     snooze: opts.snooze === true,
+    timezone: opts.timezone,
   });
 }
 
