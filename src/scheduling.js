@@ -159,7 +159,7 @@ function parseWeekdaySchedule(input) {
 
   const weekday = match[1].toLowerCase();
   const time = parseClockTime(
-    match[2] || "9",
+    match[2] || "11",
     match[3] || "0",
     match[4] || null,
   );
@@ -184,7 +184,7 @@ function parseMonthlySchedule(input) {
     last: -1,
   };
   const time = parseClockTime(
-    match[3] || "9",
+    match[3] || "11",
     match[4] || "0",
     match[5] || null,
   );
@@ -206,7 +206,7 @@ export function parseNaturalSchedule(input) {
 
   const lower = text.toLowerCase();
   if (/^every\s+(day|daily|days)$/i.test(text)) {
-    return { kind: "daily", hour: 9, minute: 0 };
+    return { kind: "daily", hour: 11, minute: 0 };
   }
   if (/^every\s+week$/i.test(text) || /^weekly$/i.test(text)) {
     return { kind: "interval", intervalMinutes: 7 * 24 * 60 };
@@ -229,7 +229,7 @@ export function parseNaturalSchedule(input) {
       text,
     );
   if (directDay) {
-    return parseWeekdaySchedule(`every ${directDay[1]} at 9:00`);
+    return parseWeekdaySchedule(`every ${directDay[1]} at 11:00`);
   }
 
   const relative =
