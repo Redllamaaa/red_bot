@@ -15,6 +15,12 @@ import {
   checkPermission,
   ROLE_PERMISSIONS,
 } from "./utils/permissions.js";
+import {
+  resolveUserTimezone,
+  isValidTimezone,
+  setStoredTimezone,
+  clearStoredTimezone,
+} from "./utils/timezone.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {
@@ -82,6 +88,14 @@ function parseActiveHours(str) {
   return { start, end };
 }
 
+function appendTimezoneHint(result, isExplicit, timezone) {
+  if (isExplicit || !result?.success) return result;
+  return {
+    ...result,
+    success: `${result.success}\n-# Guessed timezone **${timezone}** from your Discord locale — run \`/timezone set\` to set it precisely.`,
+  };
+}
+
 /**
  * Parses the "every ..." schedule text and optional active-hours window
  * shared by both repeating-reminder types (plain message repeats and
@@ -101,6 +115,12 @@ function parseRepeatingScheduleOptions(opts) {
       error:
         "Couldn't parse the schedule. Try something like `every week`, `first monday each month`, `every friday at 20`, `3h`, `45m`, or `1d`.",
     };
+  }
+  if (
+    parsedSchedule?.kind === "interval" &&
+    parsedSchedule.intervalMinutes <= 0
+  ) {
+    return { error: "Schedule interval must be greater than zero." };
   }
 
   let activeStart = null;
@@ -350,34 +370,48 @@ export async function handleRemindCommand(interaction) {
   if (permissionError) return permissionError;
 
   const opts = optionMap(interaction);
+  const userId = interaction.member?.user?.id || interaction.user?.id;
+  const { timezone, isExplicit } = await resolveUserTimezone(
+    userId,
+    interaction.locale,
+  );
 
-  return createCommandReminder({
+  const result = await createCommandReminder({
     guildId: interaction.guild_id,
     channelId: interaction.channel_id,
-    userId: interaction.member?.user?.id || interaction.user?.id,
+    userId,
     commandName: opts.command,
     every: opts.every,
     active: opts.active,
-    timezone: opts.timezone,
+    timezone,
     title: opts.title,
     role: opts.role,
   });
+
+  return appendTimezoneHint(result, isExplicit, timezone);
 }
 
 export async function handleRemindOnce(interaction) {
   const opts = optionMap(interaction);
+  const userId = interaction.member?.user?.id || interaction.user?.id;
+  const { timezone, isExplicit } = await resolveUserTimezone(
+    userId,
+    interaction.locale,
+  );
 
-  return createOnceReminder({
+  const result = await createOnceReminder({
     guildId: interaction.guild_id,
     channelId: interaction.channel_id,
-    userId: interaction.member?.user?.id || interaction.user?.id,
+    userId,
     message: opts.message,
     time: opts.time,
     title: opts.title,
     role: opts.role,
     snooze: opts.snooze === true,
-    timezone: opts.timezone,
+    timezone,
   });
+
+  return appendTimezoneHint(result, isExplicit, timezone);
 }
 
 export async function handleRemindRepeat(interaction) {
@@ -389,19 +423,26 @@ export async function handleRemindRepeat(interaction) {
   if (permissionError) return permissionError;
 
   const opts = optionMap(interaction);
+  const userId = interaction.member?.user?.id || interaction.user?.id;
+  const { timezone, isExplicit } = await resolveUserTimezone(
+    userId,
+    interaction.locale,
+  );
 
-  return createRepeatingReminder({
+  const result = await createRepeatingReminder({
     guildId: interaction.guild_id,
     channelId: interaction.channel_id,
-    userId: interaction.member?.user?.id || interaction.user?.id,
+    userId,
     message: opts.message,
     every: opts.every,
     active: opts.active,
-    timezone: opts.timezone,
+    timezone,
     title: opts.title,
     role: opts.role,
     snooze: opts.snooze === true,
   });
+
+  return appendTimezoneHint(result, isExplicit, timezone);
 }
 
 export async function handleRemindList(interaction) {
@@ -476,6 +517,47 @@ export async function handleRemindDelete(interaction) {
     .run();
 
   return { success: `Reminder \`${idPrefix}\` deleted.` };
+}
+
+export async function handleTimezoneCommand(interaction) {
+  const subcommand = interaction.data?.subcommand;
+  const userId = interaction.member?.user?.id || interaction.user?.id;
+
+  if (subcommand === "set") {
+    const opts = optionMap(interaction);
+    const tz = String(opts.timezone || "").trim();
+    if (!isValidTimezone(tz)) {
+      return {
+        error: `\`${tz}\` isn't a recognized IANA timezone. Try something like \`America/New_York\` or \`Europe/London\`.`,
+      };
+    }
+    await setStoredTimezone(userId, tz);
+    return {
+      success: `Your timezone is now set to **${tz}**. It'll be used for all your reminders.`,
+    };
+  }
+
+  if (subcommand === "view") {
+    const { timezone, isExplicit } = await resolveUserTimezone(
+      userId,
+      interaction.locale,
+    );
+    return {
+      success: isExplicit
+        ? `Your timezone is set to **${timezone}**.`
+        : `You haven't set a timezone yet — currently guessing **${timezone}** from your Discord locale. Run \`/timezone set\` to set it precisely.`,
+    };
+  }
+
+  if (subcommand === "clear") {
+    await clearStoredTimezone(userId);
+    return {
+      success:
+        "Your saved timezone was cleared. Reminders will fall back to a guess based on your Discord locale.",
+    };
+  }
+
+  return { error: "Unknown timezone command." };
 }
 
 export async function handleFunCommand(commandName) {

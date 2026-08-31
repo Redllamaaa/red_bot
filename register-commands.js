@@ -62,13 +62,6 @@ const commands = [
             required: true,
           },
           {
-            type: 3,
-            name: "timezone",
-            description:
-              "IANA timezone for interpreting 'time', e.g. America/New_York (default: UTC). Not needed if 'time' ends in Z or an offset.",
-            required: false,
-          },
-          {
             type: 5,
             name: "snooze",
             description: "Allow this reminder to be snoozed for 1 hour",
@@ -102,7 +95,7 @@ const commands = [
           },
           {
             type: 3,
-            name: "time",
+            name: "every",
             description:
               "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
             required: true,
@@ -111,13 +104,6 @@ const commands = [
             type: 3,
             name: "active",
             description: "Active hour window, e.g. 8-24 (blocks 12am-8am)",
-            required: false,
-          },
-          {
-            type: 3,
-            name: "timezone",
-            description:
-              "IANA timezone for the active window, e.g. America/New_York",
             required: false,
           },
           {
@@ -155,7 +141,7 @@ const commands = [
           },
           {
             type: 3,
-            name: "time",
+            name: "every",
             description:
               "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
             required: true,
@@ -164,13 +150,6 @@ const commands = [
             type: 3,
             name: "active",
             description: "Active hour window, e.g. 8-24 (blocks 12am-8am)",
-            required: false,
-          },
-          {
-            type: 3,
-            name: "timezone",
-            description:
-              "IANA timezone for the active window, e.g. America/New_York",
             required: false,
           },
           {
@@ -268,19 +247,38 @@ const commands = [
       },
     ],
   },
-];
 
-const res = await fetch(
-  `https://discord.com/api/v10/applications/${APPLICATION_ID}/commands`,
   {
-    method: "PUT",
-    headers: {
-      Authorization: `Bot ${TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(commands),
+    name: "timezone",
+    description: "Manage your personal timezone for reminders",
+    options: [
+      {
+        type: 1,
+        name: "set",
+        description: "Set your IANA timezone, e.g. America/New_York",
+        options: [
+          {
+            type: 3,
+            name: "timezone",
+            description: "IANA timezone name, e.g. Europe/London",
+            required: true,
+          },
+        ],
+      },
+      {
+        type: 1,
+        name: "view",
+        description: "Show the timezone currently used for your reminders",
+      },
+      {
+        type: 1,
+        name: "clear",
+        description:
+          "Clear your saved timezone (falls back to a guess from your Discord locale)",
+      },
+    ],
   },
-);
+];
 
 if (!res.ok) {
   console.error(`Failed: ${res.status} ${await res.text()}`);

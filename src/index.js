@@ -14,6 +14,7 @@ import {
   handleRemindDelete,
   handleRemindCommand,
   handleBirthdayCommand,
+  handleTimezoneCommand,
   handleFunCommand,
 } from "./commands.js";
 import {
@@ -61,6 +62,7 @@ function adaptInteraction(interaction) {
     channel_id: interaction.channelId,
     user: interaction.user,
     member: interaction.member,
+    locale: interaction.locale,
     data: {
       subcommand: subOption?.name,
       options: subOption?.options || [],
@@ -242,7 +244,8 @@ client.on("interactionCreate", async (interaction) => {
 
     if (
       interaction.commandName !== "remind" &&
-      interaction.commandName !== "birthday"
+      interaction.commandName !== "birthday" &&
+      interaction.commandName !== "timezone"
     ) {
       return;
     }
@@ -298,7 +301,25 @@ client.on("interactionCreate", async (interaction) => {
             subcommand: sub,
           },
         });
+      } else if (interaction.commandName === "timezone") {
+        const sub = interaction.options.getSubcommand();
+
+        embedTitle =
+          sub === "set"
+            ? "Timezone Set"
+            : sub === "clear"
+              ? "Timezone Cleared"
+              : "Your Timezone";
+
+        result = await handleTimezoneCommand({
+          ...adapted,
+          data: {
+            ...adapted.data,
+            subcommand: sub,
+          },
+        });
       } else {
+        // commandName === "remind" from here down
         const sub = interaction.options.getSubcommand();
 
         if (sub === "once") {

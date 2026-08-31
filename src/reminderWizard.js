@@ -16,6 +16,7 @@ import {
 } from "./commands.js";
 import { checkPermission } from "./utils/permissions.js";
 import { COLORS } from "./utils/constants.js";
+import { resolveUserTimezone } from "./utils/timezone.js";
 
 /**
  * Guided, button/modal-driven alternative to typing `/remind once`,
@@ -42,6 +43,7 @@ function createSession(type, interaction) {
     guildId: interaction.guildId,
     channelId: interaction.channelId,
     userId: interaction.member?.user?.id || interaction.user?.id,
+    locale: interaction.locale,
     data: {},
     createdAt: Date.now(),
   };
@@ -378,57 +380,68 @@ async function finalizeWizard(interaction, sessionId) {
 
   await interaction.deferUpdate();
 
-  const { type, data, guildId, channelId, userId } = session;
-  let result;
+  const { type, data, guildId, channelId, userId, locale } = session;
+  const { timezone, isExplicit } = await resolveUserTimezone(userId, locale);
 
-  if (type === "once") {
-    result = await createOnceReminder({
-      guildId,
-      channelId,
-      userId,
-      message: data.message,
-      time: data.time,
-      title: data.title,
-      role: data.roleId,
-      snooze: !!data.snooze,
-      timezone: data.timezone,
-    });
-  } else if (type === "repeat") {
-    result = await createRepeatingReminder({
-      guildId,
-      channelId,
-      userId,
-      message: data.message,
-      every: data.every,
-      active: data.active,
-      timezone: data.timezone,
-      title: data.title,
-      role: data.roleId,
-      snooze: !!data.snooze,
-    });
-  } else if (type === "command") {
-    result = await createCommandReminder({
-      guildId,
-      channelId,
-      userId,
-      commandName: data.commandName,
-      every: data.every,
-      active: data.active,
-      timezone: data.timezone,
-      title: data.title,
-      role: data.roleId,
-    });
+  let result;
+  try {
+    if (type === "once") {
+      result = await createOnceReminder({
+        guildId,
+        channelId,
+        userId,
+        message: data.message,
+        time: data.time,
+        title: data.title,
+        role: data.roleId,
+        snooze: !!data.snooze,
+        timezone,
+      });
+    } else if (type === "repeat") {
+      result = await createRepeatingReminder({
+        guildId,
+        channelId,
+        userId,
+        message: data.message,
+        every: data.every,
+        active: data.active,
+        timezone,
+        title: data.title,
+        role: data.roleId,
+        snooze: !!data.snooze,
+      });
+    } else if (type === "command") {
+      result = await createCommandReminder({
+        guildId,
+        channelId,
+        userId,
+        commandName: data.commandName,
+        every: data.every,
+        active: data.active,
+        timezone,
+        title: data.title,
+        role: data.roleId,
+      });
+    }
+  } catch (err) {
+    console.error("Wizard finalize error:", err);
+    result = { error: "Something went wrong creating that reminder." };
   }
 
   sessions.delete(sessionId);
 
   const isError = Boolean(result?.error);
+  const description = isError
+    ? result?.error || "Something went wrong."
+    : isExplicit
+      ? result.success
+      : `${result.success}\n-# Guessed timezone **${timezone}** from your Discord locale — run \`/timezone set\` to set it precisely.`;
+
   await interaction.editReply({
     embeds: [
       {
         title: isError ? "Error" : "Reminder Created",
-        description:
-          result?.success || result?.error || "Something went wrong.",
+        description,
         color: isError ? COLORS.ERROR : COLORS.DEFAULT,
       },
     ],
