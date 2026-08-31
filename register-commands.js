@@ -62,6 +62,13 @@ const commands = [
             required: true,
           },
           {
+            type: 3,
+            name: "timezone",
+            description:
+              "IANA timezone for interpreting 'time', e.g. America/New_York (default: UTC). Not needed if 'time' ends in Z or an offset.",
+            required: false,
+          },
+          {
             type: 5,
             name: "snooze",
             description: "Allow this reminder to be snoozed for 1 hour",
