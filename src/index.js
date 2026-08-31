@@ -1,6 +1,11 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { db } from "./db.js";
-import { sendReminderMessage, sendBirthdayMessage } from "./discord.js";
+import { isAdmin } from "./utils/permissions.js";
+import {
+  sendReminderMessage,
+  sendBirthdayMessage,
+  clearMessages,
+} from "./discord.js";
 import {
   isWithinActiveWindow,
   nextWindowStart,
@@ -31,16 +36,22 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-const FUN_COMMAND_NAMES = new Set(Object.keys(commandRegistry));
+// Convert discord.js Interaction to match commands.js expected format.
+function adaptInteraction(interaction, subcommandOverride) {
+  const subOption = interaction.options.data[0];
 
-const FUN_COMMAND_TITLES = {
-  compliment: "Compliment",
-  fortune: "Fortune",
-  funfact: "Fun Fact",
-  pizzaidea: "Pizza Idea",
-  lifetruth: "Life Truth",
-  thought: "Thought",
-};
+  return {
+    guild_id: interaction.guildId,
+    channel_id: interaction.channelId,
+    user: interaction.user,
+    member: interaction.member,
+    locale: interaction.locale,
+    data: {
+      subcommand: subcommandOverride ?? subOption?.name,
+      options: subOption?.options || [],
+    },
+  };
+}
 
 function createEmbed({ title, description, color = COLORS.DEFAULT }) {
   return {
@@ -54,21 +65,155 @@ function createEmbed({ title, description, color = COLORS.DEFAULT }) {
   };
 }
 
-// Convert discord.js Interaction to match commands.js expected format.
-function adaptInteraction(interaction) {
-  const subOption = interaction.options.data[0];
-
-  return {
-    guild_id: interaction.guildId,
-    channel_id: interaction.channelId,
-    user: interaction.user,
-    member: interaction.member,
-    locale: interaction.locale,
-    data: {
-      subcommand: subOption?.name,
-      options: subOption?.options || [],
+/**
+ * Single source of truth for every slash command that follows the
+ * "defer -> run -> reply with an embed" shape. Keyed by `commandName` for
+ * commands with no subcommands, or `commandName:subcommand` for ones that
+ * have them.
+ *
+ * Each entry:
+ *   - title: string, or (interaction) => string
+ *   - color: embed color on success (defaults to COLORS.DEFAULT)
+ *   - ephemeral: whether the reply should be ephemeral (defaults false)
+ *   - permission: optional (interaction) => string | null — return an
+ *     error message to deny, or null/undefined to allow. Runs before defer.
+ *   - run: (interaction) => Promise<{ success } | { error }>
+ *
+ * Commands that don't fit this shape (buttons, modals, the reminder
+ * wizard's `/remind menu`) are still special-cased above the dispatcher,
+ * same as before — this table only covers the "one reply, one embed" case,
+ * which is the vast majority of commands.
+ */
+const COMMAND_TABLE = {
     },
+  },
+
+  "remind:once": {
+    title: "Reminder Set",
+    run: (interaction) => handleRemindOnce(adaptInteraction(interaction)),
+  },
+  "remind:repeat": {
+    title: "Repeating Reminder Set",
+    run: (interaction) => handleRemindRepeat(adaptInteraction(interaction)),
+  },
+  "remind:command": {
+    title: "Recurring Command Reminder Set",
+    run: (interaction) => handleRemindCommand(adaptInteraction(interaction)),
+  },
+  "remind:list": {
+    title: "Active Reminders",
+    run: (interaction) => handleRemindList(adaptInteraction(interaction)),
+  },
+  "remind:delete": {
+    title: "Reminder Deleted",
+    run: (interaction) => handleRemindDelete(adaptInteraction(interaction)),
+  },
+
+  "birthday:set": {
+    title: "Birthday Set",
+    run: (interaction) =>
+      handleBirthdayCommand(adaptInteraction(interaction, "set")),
+  },
+  "birthday:delete": {
+    title: "Birthday Deleted",
+    run: (interaction) =>
+      handleBirthdayCommand(adaptInteraction(interaction, "delete")),
+  },
+  "birthday:list": {
+    title: "Birthdays",
+    run: (interaction) =>
+      handleBirthdayCommand(adaptInteraction(interaction, "list")),
+  },
+
+  "timezone:set": {
+    title: "Timezone Set",
+    run: (interaction) =>
+      handleTimezoneCommand(adaptInteraction(interaction, "set")),
+  },
+  "timezone:view": {
+    title: "Your Timezone",
+    run: (interaction) =>
+      handleTimezoneCommand(adaptInteraction(interaction, "view")),
+  },
+  "timezone:clear": {
+    title: "Timezone Cleared",
+    run: (interaction) =>
+      handleTimezoneCommand(adaptInteraction(interaction, "clear")),
+  },
+};
+
+// Fun commands (compliment, fortune, ...) all share one shape, so they're
+// generated into the same table instead of hand-written one by one.
+const FUN_COMMAND_TITLES = {
+  compliment: "Compliment",
+  fortune: "Fortune",
+  funfact: "Fun Fact",
+  pizzaidea: "Pizza Idea",
+  lifetruth: "Life Truth",
+  thought: "Thought",
+};
+for (const name of Object.keys(commandRegistry)) {
+  COMMAND_TABLE[name] = {
+    title: FUN_COMMAND_TITLES[name] || name,
+    color: COLORS.FUN,
+    run: () => handleFunCommand(name),
   };
+}
+
+function commandKeyFor(interaction) {
+  const sub = interaction.options.getSubcommand(false);
+  return sub ? `${interaction.commandName}:${sub}` : interaction.commandName;
+}
+
+/**
+ * Runs whatever COMMAND_TABLE entry matches this interaction. Returns
+ * `true` if it found and handled an entry, `false` if the interaction
+ * didn't match anything in the table (so the caller can decide what to do
+ * with it, e.g. the reminder wizard menu).
+ */
+async function dispatchCommand(interaction) {
+  const key = commandKeyFor(interaction);
+  const entry = COMMAND_TABLE[key];
+  if (!entry) return false;
+
+  if (entry.permission) {
+    const denied = entry.permission(interaction);
+    if (denied) {
+      await interaction.reply({
+        ...createEmbed({
+          title: "Error",
+          description: denied,
+          color: COLORS.ERROR,
+        }),
+        ephemeral: true,
+      });
+      return true;
+    }
+  }
+
+  await interaction.deferReply({ ephemeral: !!entry.ephemeral });
+
+  let result;
+  try {
+    result = await entry.run(interaction);
+  } catch (err) {
+    console.error(`${key} error:`, err);
+    result = { error: `Something went wrong: ${err.message}` };
+  }
+
+  const isError = Boolean(result.error);
+  const title =
+    typeof entry.title === "function" ? entry.title(interaction) : entry.title;
+
+  await interaction.editReply({
+    ...createEmbed({
+      title: isError ? "Error" : title,
+      description: result.success || result.error,
+      color: isError ? COLORS.ERROR : entry.color || COLORS.DEFAULT,
+    }),
+  });
+
+  return true;
 }
 
 client.once("clientReady", async () => {
@@ -78,8 +223,6 @@ client.once("clientReady", async () => {
     const count = await registerCommands();
     console.log(`Slash commands refreshed (${count} top-level commands).`);
   } catch (err) {
-    // Non-fatal — keep running with whatever's already registered on
-    // Discord's side rather than crashing the whole bot over this.
     console.error("Failed to refresh slash commands on boot:", err.message);
   }
 
@@ -111,7 +254,6 @@ function scheduleNextReminderCheck(delayMs) {
 
 client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
-    // Reminder-creation wizard buttons (type picker, confirm, cancel).
     if (interaction.customId.startsWith("rw:")) {
       try {
         await handleWizardButton(interaction);
@@ -126,7 +268,6 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     const [, , duration, reminderId] = interaction.customId.split(":");
-
     const snoozeMinutes =
       duration === "30m" ? 30 : duration === "1h" ? 60 : null;
 
@@ -141,9 +282,7 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const { results } = await db
         .prepare(
-          `SELECT id, type, snooze_enabled, enabled
-           FROM reminders
-           WHERE id = ?`,
+          `SELECT id, type, snooze_enabled, enabled FROM reminders WHERE id = ?`,
         )
         .bind(reminderId)
         .all();
@@ -157,7 +296,6 @@ client.on("interactionCreate", async (interaction) => {
         });
         return;
       }
-
       if (!reminder.enabled) {
         await interaction.reply({
           content: "That reminder is no longer active.",
@@ -165,7 +303,6 @@ client.on("interactionCreate", async (interaction) => {
         });
         return;
       }
-
       if (!reminder.snooze_enabled) {
         await interaction.reply({
           content: "Snoozing is disabled for this reminder.",
@@ -177,11 +314,7 @@ client.on("interactionCreate", async (interaction) => {
       const snoozedUntil = new Date(Date.now() + snoozeMinutes * 60 * 1000);
 
       await db
-        .prepare(
-          `UPDATE reminders
-           SET next_eligible_at = ?
-           WHERE id = ?`,
-        )
+        .prepare(`UPDATE reminders SET next_eligible_at = ? WHERE id = ?`)
         .bind(snoozedUntil.toISOString(), reminderId)
         .run();
 
@@ -193,7 +326,6 @@ client.on("interactionCreate", async (interaction) => {
       });
     } catch (err) {
       console.error("Failed to snooze reminder:", err);
-
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: "Something went wrong while snoozing that reminder.",
@@ -230,43 +362,13 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    if (FUN_COMMAND_NAMES.has(interaction.commandName)) {
-      await interaction.deferReply();
-
-      const result = await handleFunCommand(interaction.commandName);
-      const isError = Boolean(result.error);
-
-      await interaction.editReply({
-        ...createEmbed({
-          title: isError
-            ? "Error"
-            : FUN_COMMAND_TITLES[interaction.commandName] ||
-              interaction.commandName,
-          description: result.success || result.error,
-          color: isError ? COLORS.ERROR : COLORS.FUN,
-        }),
-      });
-
-      return;
-    }
-
-    if (
-      interaction.commandName !== "remind" &&
-      interaction.commandName !== "birthday" &&
-      interaction.commandName !== "timezone"
-    ) {
-      return;
-    }
-
-    // The guided reminder wizard replies with buttons, not the plain
-    // embed the rest of this handler builds below, so it's handled
-    // separately before the generic deferReply/editReply flow.
+    // The guided reminder wizard replies with buttons, not a plain embed,
+    // so it stays outside the table-driven dispatch.
     if (
       interaction.commandName === "remind" &&
       interaction.options.getSubcommand() === "menu"
     ) {
       await interaction.deferReply({ ephemeral: true });
-
       try {
         await sendReminderTypeMenu(interaction);
       } catch (err) {
@@ -279,95 +381,11 @@ client.on("interactionCreate", async (interaction) => {
           }),
         });
       }
-
       return;
     }
 
-    await interaction.deferReply();
-
-    let result;
-    let embedTitle = "Reminder";
-
-    const adapted = adaptInteraction(interaction);
-
-    try {
-      if (interaction.commandName === "birthday") {
-        const sub = interaction.options.getSubcommand();
-
-        if (sub === "set") {
-          embedTitle = "Birthday Set";
-        } else if (sub === "delete") {
-          embedTitle = "Birthday Deleted";
-        } else if (sub === "list") {
-          embedTitle = "Birthdays";
-        }
-
-        result = await handleBirthdayCommand({
-          ...adapted,
-          data: {
-            ...adapted.data,
-            subcommand: sub,
-          },
-        });
-      } else if (interaction.commandName === "timezone") {
-        const sub = interaction.options.getSubcommand();
-
-        embedTitle =
-          sub === "set"
-            ? "Timezone Set"
-            : sub === "clear"
-              ? "Timezone Cleared"
-              : "Your Timezone";
-
-        result = await handleTimezoneCommand({
-          ...adapted,
-          data: {
-            ...adapted.data,
-            subcommand: sub,
-          },
-        });
-      } else {
-        // commandName === "remind" from here down
-        const sub = interaction.options.getSubcommand();
-
-        if (sub === "once") {
-          embedTitle = "Reminder Set";
-          result = await handleRemindOnce(adapted);
-        } else if (sub === "repeat") {
-          embedTitle = "Repeating Reminder Set";
-          result = await handleRemindRepeat(adapted);
-        } else if (sub === "command") {
-          embedTitle = "Recurring Command Reminder Set";
-          result = await handleRemindCommand(adapted);
-        } else if (sub === "list") {
-          embedTitle = "Active Reminders";
-          result = await handleRemindList(adapted);
-        } else if (sub === "delete") {
-          embedTitle = "Reminder Deleted";
-          result = await handleRemindDelete(adapted);
-        } else {
-          result = {
-            error: "Unknown command.",
-          };
-        }
-      }
-    } catch (err) {
-      console.error("Command error:", err);
-
-      result = {
-        error: `Something went wrong: ${err.message}`,
-      };
-    }
-
-    const isError = Boolean(result.error);
-
-    await interaction.editReply({
-      ...createEmbed({
-        title: isError ? "Error" : embedTitle,
-        description: result.success || result.error,
-        color: isError ? COLORS.ERROR : COLORS.DEFAULT,
-      }),
-    });
+    const handled = await dispatchCommand(interaction);
+    if (!handled) return; // unknown command, silently ignore
   } catch (err) {
     console.error("Unhandled interaction error:", err);
 
