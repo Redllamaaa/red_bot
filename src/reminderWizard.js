@@ -120,6 +120,16 @@ function buildDetailsModal(type, sessionId) {
       ),
     );
     rows.push(
+      textRow(
+        "timezone",
+        "Timezone (optional, default UTC)",
+        TextInputStyle.Short,
+        false,
+        null,
+        "e.g. America/New_York",
+      ),
+    );
+    rows.push(
       textRow("title", "Embed title (optional)", TextInputStyle.Short, false),
     );
   } else if (type === "repeat") {
@@ -220,6 +230,7 @@ function buildReviewMessage(session) {
   if (type === "once") {
     lines.push(`**Message:** ${data.message || "_not set_"}`);
     lines.push(`**Time:** ${data.time || "_not set_"}`);
+    if (data.timezone) lines.push(`**Timezone:** ${data.timezone}`);
   } else if (type === "repeat") {
     lines.push(`**Message:** ${data.message || "_not set_"}`);
     lines.push(`**Schedule:** ${data.every || "_not set_"}`);
@@ -380,6 +391,7 @@ async function finalizeWizard(interaction, sessionId) {
       title: data.title,
       role: data.roleId,
       snooze: !!data.snooze,
+      timezone: data.timezone,
     });
   } else if (type === "repeat") {
     result = await createRepeatingReminder({
@@ -473,6 +485,7 @@ export async function handleWizardModalSubmit(interaction) {
   if (type === "once") {
     session.data.message = getField("message");
     session.data.time = getField("time");
+    session.data.timezone = getField("timezone") || undefined;
     session.data.title = getField("title") || undefined;
   } else if (type === "repeat") {
     session.data.message = getField("message");
