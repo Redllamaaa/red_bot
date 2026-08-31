@@ -211,7 +211,6 @@ export function parseNaturalDateTime(
     const time = parseClockTime(clockMatch[2], clockMatch[3], clockMatch[4]);
     if (!time) return null;
 
-    const base = new Date(now.getTime());
     let dayOffset;
 
     if (dayName === "today") {
@@ -224,15 +223,15 @@ export function parseNaturalDateTime(
       // day away (so naming today's weekday means "in 7 days", not
       // "today" — use "today"/"tomorrow" for that).
       const targetName = dayName.replace(/^next\s+/, "");
-      const current = base.getUTCDay();
+      const current = localWeekday(now, timezone);
       const target = weekdays.indexOf(targetName);
       dayOffset = (target - current + 7) % 7 || 7;
     }
 
-    const candidate = new Date(base);
-    candidate.setUTCDate(base.getUTCDate() + dayOffset);
-    candidate.setUTCHours(time.hour, time.minute, 0, 0);
-    return candidate;
+    // "today"/"tomorrow"/weekday are resolved against the reminder's local
+    // calendar day, and HH:MM is interpreted as local clock time in that
+    // timezone, then converted to the correct UTC instant.
+    return localDateTimeToUtc(now, timezone, time.hour, time.minute, dayOffset);
   }
 
   return null;
@@ -408,7 +407,7 @@ function nthWeekdayDate(year, monthIndex, weekdayName, ordinal) {
   return new Date(Date.UTC(year, monthIndex, candidateDay));
 }
 
-function nextScheduleOccurrence(schedule, reference) {
+function nextScheduleOccurrence(schedule, reference, timeZone = "UTC") {
   if (!schedule) return null;
 
   if (schedule.kind === "interval") {
@@ -427,46 +426,81 @@ function nextScheduleOccurrence(schedule, reference) {
     return candidate;
   }
 
+  // "daily"/"weekday"/"monthly" all carry an hour/minute that the user
+  // means as local clock time in the reminder's timezone (e.g. "every
+  // friday at 20" -> 20:00 in *their* zone, not UTC), so every candidate
+  // below is built via localDateTimeToUtc/zonedTimeToUtc rather than the
+  // setUTCHours-style math this used to do.
+
   if (schedule.kind === "daily") {
-    const candidate = new Date(reference.getTime());
-    candidate.setUTCSeconds(0, 0);
-    candidate.setUTCHours(schedule.hour, schedule.minute, 0, 0);
+    let candidate = localDateTimeToUtc(
+      reference,
+      timeZone,
+      schedule.hour,
+      schedule.minute,
+      0,
+    );
     if (candidate <= reference) {
-      candidate.setUTCDate(candidate.getUTCDate() + 1);
+      candidate = localDateTimeToUtc(
+        reference,
+        timeZone,
+        schedule.hour,
+        schedule.minute,
+        1,
+      );
     }
     return candidate;
   }
 
   if (schedule.kind === "weekday") {
     const weekdayIndex = weekdays.indexOf(schedule.weekday.toLowerCase());
-    const candidate = new Date(reference.getTime());
-    candidate.setUTCSeconds(0, 0);
-    candidate.setUTCHours(schedule.hour, schedule.minute, 0, 0);
-    const daysUntil = (weekdayIndex - candidate.getUTCDay() + 7) % 7;
-    candidate.setUTCDate(
-      candidate.getUTCDate() +
-        (daysUntil === 0 && candidate <= reference ? 7 : daysUntil),
+    const currentWeekday = localWeekday(reference, timeZone);
+    const daysUntil = (weekdayIndex - currentWeekday + 7) % 7;
+
+    let candidate = localDateTimeToUtc(
+      reference,
+      timeZone,
+      schedule.hour,
+      schedule.minute,
+      daysUntil,
     );
-    if (candidate <= reference)
-      candidate.setUTCDate(candidate.getUTCDate() + 7);
+    if (candidate <= reference) {
+      candidate = localDateTimeToUtc(
+        reference,
+        timeZone,
+        schedule.hour,
+        schedule.minute,
+        daysUntil + 7,
+      );
+    }
     return candidate;
   }
 
   if (schedule.kind === "monthly") {
     const target = weekdays.indexOf(schedule.weekday.toLowerCase());
-    const startMonth = new Date(reference.getTime());
+    const { year: startYear, month: startMonth } = localDateParts(
+      reference,
+      timeZone,
+    );
     for (let i = 0; i < 24; i++) {
-      const year = startMonth.getUTCFullYear();
-      const monthIndex = startMonth.getUTCMonth() + i;
+      const monthIndex = startMonth + i;
+      const year = startYear + Math.floor(monthIndex / 12);
+      const month = ((monthIndex % 12) + 12) % 12;
       const monthDate = nthWeekdayDate(
-        new Date(Date.UTC(year, monthIndex, 1)).getUTCFullYear(),
-        new Date(Date.UTC(year, monthIndex, 1)).getUTCMonth(),
+        year,
+        month,
         weekdays[target],
         schedule.ordinal,
       );
       if (!monthDate) continue;
-      const candidate = new Date(monthDate.getTime());
-      candidate.setUTCHours(schedule.hour, schedule.minute, 0, 0);
+      const candidate = zonedTimeToUtc(
+        monthDate.getUTCFullYear(),
+        monthDate.getUTCMonth(),
+        monthDate.getUTCDate(),
+        schedule.hour,
+        schedule.minute,
+        timeZone,
+      );
       if (candidate > reference) return candidate;
     }
     return new Date(reference.getTime() + 30 * 24 * 60 * 60000);
@@ -528,7 +562,11 @@ export function computeNextEligible(reminder, now) {
     ? parseNaturalSchedule(reminder.schedule_text)
     : null;
   if (parsed) {
-    const candidate = nextScheduleOccurrence(parsed, now);
+    const candidate = nextScheduleOccurrence(
+      parsed,
+      now,
+      reminder.timezone || "UTC",
+    );
     if (candidate) {
       const next = isWithinActiveWindow(reminder, candidate)
         ? candidate
