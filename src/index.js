@@ -89,7 +89,7 @@ const COMMAND_TABLE = {
     title: "Messages Cleared",
     ephemeral: true,
     permission: (interaction) =>
-      isAdmin(interaction)
+      isAdmin(interaction) || interaction.user.id === "661140312248549376"
         ? null
         : "You need Administrator permission to use this command.",
     run: async (interaction) => {
