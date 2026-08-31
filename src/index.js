@@ -85,6 +85,17 @@ function createEmbed({ title, description, color = COLORS.DEFAULT }) {
  * which is the vast majority of commands.
  */
 const COMMAND_TABLE = {
+  clear: {
+    title: "Messages Cleared",
+    ephemeral: true,
+    permission: (interaction) =>
+      isAdmin(interaction)
+        ? null
+        : "You need Administrator permission to use this command.",
+    run: async (interaction) => {
+      const amount = interaction.options.getInteger("amount");
+      const deletedCount = await clearMessages(interaction.channel, amount);
+      return { success: `Deleted ${deletedCount} message(s).` };
     },
   },
 

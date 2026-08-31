@@ -84,3 +84,8 @@ export async function sendBirthdayMessage(client, birthday) {
     content,
   });
 }
+
+export async function clearMessages(channel, amount) {
+  const deleted = await channel.bulkDelete(amount, true); // true = skip messages >14 days old
+  return deleted.size;
+}

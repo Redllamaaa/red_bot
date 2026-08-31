@@ -266,6 +266,20 @@ function buildCommands() {
         },
       ],
     },
+    {
+      name: "clear",
+      description: "Bulk delete recent messages in this channel",
+      options: [
+        {
+          type: 4, // INTEGER
+          name: "amount",
+          description: "Number of messages to delete (2-100)",
+          required: true,
+          min_value: 2,
+          max_value: 100,
+        },
+      ],
+    },
   ];
 }
 
