@@ -2,12 +2,19 @@ import { PermissionsBitField } from "discord.js";
 
 export const ROLE_PERMISSIONS = {
   MANAGE_REMINDERS: {
-    roles: [process.env.REMINDER_REPEAT_ROLE_ID],
+    roles: [
+      process.env.REMINDER_REPEAT_ROLE_ID,
+      process.env.REMINDER_REPEAT_ROLE_ID_TOKU,
+      process.env.REMINDER_MOD_ID_TOKU,
+    ],
     users: ["661140312248549376"],
     allowAdmin: true,
   },
   MANAGE_BIRTHDAYS: {
-    roles: [process.env.REMINDER_REPEAT_ROLE_ID],
+    roles: [
+      process.env.REMINDER_REPEAT_ROLE_ID,
+      process.env.REMINDER_MOD_ID_TOKU,
+    ],
     users: ["661140312248549376"],
     allowAdmin: true,
   },
