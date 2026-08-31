@@ -25,6 +25,7 @@ import {
 } from "./reminderWizard.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
+import { registerCommands } from "../register-commands.js";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -70,11 +71,18 @@ function adaptInteraction(interaction) {
   };
 }
 
-client.once("clientReady", () => {
-  console.log(`🤖 Logged in as ${client.user.tag}!`);
+client.once("clientReady", async () => {
+  console.log(`Logged in as ${client.user.tag}!`);
 
-  // Run initial checks on boot, then schedule the next run only after the
-  // previous one finishes.
+  try {
+    const count = await registerCommands();
+    console.log(`Slash commands refreshed (${count} top-level commands).`);
+  } catch (err) {
+    // Non-fatal — keep running with whatever's already registered on
+    // Discord's side rather than crashing the whole bot over this.
+    console.error("Failed to refresh slash commands on boot:", err.message);
+  }
+
   scheduleNextReminderCheck(0);
 });
 
