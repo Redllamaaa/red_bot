@@ -2,15 +2,25 @@
  * Returns the local hour (0-23) for a given UTC instant in the given IANA
  * timezone, using the built-in Intl API (no extra deps needed).
  */
+
+const formatterCache = new Map();
+function getFormatter(timezone) {
+  const tz = timezone || "UTC";
+  let fmt = formatterCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      hour12: false,
+    });
+    formatterCache.set(tz, fmt);
+  }
+  return fmt;
+}
+
 function localHour(date, timezone) {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone || "UTC",
-    hour: "numeric",
-    hour12: false,
-  });
-  const parts = fmt.formatToParts(date);
+  const parts = getFormatter(timezone).formatToParts(date);
   const hourPart = parts.find((p) => p.type === "hour").value;
-  // Intl can return "24" for midnight in hour12:false in some environments; normalize.
   return Number(hourPart) % 24;
 }
 
@@ -372,15 +382,12 @@ export function isWithinActiveWindow(reminder, now) {
 export function nextWindowStart(reminder, now) {
   const probe = new Date(now.getTime());
   probe.setUTCSeconds(0, 0);
-  // Step minute-by-minute for up to 25 hours (1500 minutes) so we don't
-  // miss the exact window-open minute even across a full day's wrap.
-  for (let i = 0; i < 25 * 60; i++) {
-    probe.setUTCMinutes(probe.getUTCMinutes() + 1);
+  for (let i = 0; i < 25; i++) {
+    probe.setUTCMinutes(probe.getUTCMinutes() + 60);
     if (isWithinActiveWindow(reminder, probe)) {
       return probe;
     }
   }
-  // fallback: shouldn't happen, but avoid an infinite-skip reminder
   return new Date(now.getTime() + 60 * 60 * 1000);
 }
 
