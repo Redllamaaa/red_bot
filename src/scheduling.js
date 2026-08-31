@@ -24,6 +24,112 @@ function localHour(date, timezone) {
   return Number(hourPart) % 24;
 }
 
+/**
+ * Returns the UTC calendar (year, 0-based month, day) that a given instant
+ * falls on when viewed in `timeZone`.
+ */
+const dateFmtCache = new Map();
+function localDateParts(date, timeZone) {
+  const tz = timeZone || "UTC";
+  let fmt = dateFmtCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    dateFmtCache.set(tz, fmt);
+  }
+  const parts = fmt.formatToParts(date);
+  const map = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+  return {
+    year: Number(map.year),
+    month: Number(map.month) - 1,
+    day: Number(map.day),
+  };
+}
+
+/** Returns the local weekday index (0=Sunday..6=Saturday) of `date` in `timeZone`. */
+const weekdayFmtCache = new Map();
+function localWeekday(date, timeZone) {
+  const tz = timeZone || "UTC";
+  let fmt = weekdayFmtCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" });
+    weekdayFmtCache.set(tz, fmt);
+  }
+  const short = fmt.format(date).toLowerCase().slice(0, 3);
+  const map = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+  return map[short];
+}
+
+/**
+ * Offset (ms) such that `instant + offset` gives the same wall-clock
+ * numbers in `timeZone` as `instant` does in UTC. Positive for zones ahead
+ * of UTC.
+ */
+function getTimeZoneOffsetMs(instant, timeZone) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(instant);
+  const map = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+  const asUtc = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour) === 24 ? 0 : Number(map.hour),
+    Number(map.minute),
+    Number(map.second),
+  );
+  return asUtc - instant.getTime();
+}
+
+/**
+ * Converts a "wall clock" date/time (year, 0-based month, day, hour,
+ * minute) meant as local time in `timeZone` into the corresponding UTC
+ * Date instant. This is the inverse of formatting a Date in that timezone.
+ */
+function zonedTimeToUtc(year, month, day, hour, minute, timeZone) {
+  const wallAsUtcMs = Date.UTC(year, month, day, hour, minute, 0, 0);
+  let t = wallAsUtcMs;
+  // Two passes converge even right around a DST transition.
+  for (let i = 0; i < 2; i++) {
+    const offset = getTimeZoneOffsetMs(new Date(t), timeZone);
+    t = wallAsUtcMs - offset;
+  }
+  return new Date(t);
+}
+
+/**
+ * Builds the UTC instant for `hour:minute` local time in `timeZone`, on the
+ * calendar day that is `dayOffset` days after the local calendar day of
+ * `reference`.
+ */
+function localDateTimeToUtc(reference, timeZone, hour, minute, dayOffset = 0) {
+  const { year, month, day } = localDateParts(reference, timeZone);
+  const base = new Date(Date.UTC(year, month, day));
+  base.setUTCDate(base.getUTCDate() + dayOffset);
+  return zonedTimeToUtc(
+    base.getUTCFullYear(),
+    base.getUTCMonth(),
+    base.getUTCDate(),
+    hour,
+    minute,
+    timeZone,
+  );
+}
+
 const weekdays = [
   "sunday",
   "monday",
