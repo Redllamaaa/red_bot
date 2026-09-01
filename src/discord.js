@@ -19,12 +19,17 @@ export async function sendReminderMessage(client, reminder) {
   }
 
   const hasRole = Boolean(reminder.ping_role_id);
-  const content = hasRole
-    ? `<@&${reminder.ping_role_id}>`
-    : `<@${reminder.created_by}>`;
-  const allowedMentions = hasRole
-    ? { roles: [reminder.ping_role_id] }
-    : { users: [reminder.created_by] };
+  const isCommandReminder = Boolean(reminder.command_name);
+
+  let content = "";
+  let allowedMentions = { parse: [] };
+  if (hasRole) {
+    content = `<@&${reminder.ping_role_id}>`;
+    allowedMentions = { roles: [reminder.ping_role_id] };
+  } else if (!isCommandReminder) {
+    content = `<@${reminder.created_by}>`;
+    allowedMentions = { users: [reminder.created_by] };
+  }
 
   const components =
     reminder.snooze_enabled === 1
@@ -48,10 +53,6 @@ export async function sendReminderMessage(client, reminder) {
     allowedMentions,
     embeds: [
       {
-        // title/message are already truncated to Discord's limits at
-        // creation time (see commands.js), but command_name reminders
-        // pull description from a live external API on every fire, so
-        // it's truncated here as a last line of defense.
         title: truncate(reminder.title, EMBED_LIMITS.TITLE),
         description: truncate(description, EMBED_LIMITS.DESCRIPTION),
         color: COLORS.REMINDER_SENT,
