@@ -149,6 +149,11 @@ function parseClockTime(hourText, minuteText, ampm) {
     const isPM = /pm/i.test(ampm);
     if (isPM && hour !== 12) hour += 12;
     if (!isPM && hour === 12) hour = 0;
+  } else if (hour === 24) {
+    // No am/pm given and hour is exactly 24 - treat as midnight, the same
+    // convention already used for active-hours windows (see
+    // parseActiveHours), rather than rejecting it as out of range.
+    hour = 0;
   }
 
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
@@ -286,6 +291,23 @@ function parseIntervalPart(input) {
   return { kind: "interval", intervalMinutes: amount * multiplier };
 }
 
+function parseDailySchedule(input) {
+  const match =
+    /^every\s+(?:day|daily|days)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i.exec(
+      input.trim(),
+    );
+  if (!match) return null;
+
+  const time = parseClockTime(
+    match[1] || "11",
+    match[2] || "0",
+    match[3] || null,
+  );
+  if (!time) return null;
+
+  return { kind: "daily", hour: time.hour, minute: time.minute };
+}
+
 function parseWeekdaySchedule(input) {
   const match =
     /^every\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i.exec(
@@ -341,15 +363,15 @@ export function parseNaturalSchedule(input) {
   if (!text) return null;
 
   const lower = text.toLowerCase();
-  if (/^every\s+(day|daily|days)$/i.test(text)) {
-    return { kind: "daily", hour: 11, minute: 0 };
-  }
   if (/^every\s+week$/i.test(text) || /^weekly$/i.test(text)) {
     return { kind: "interval", intervalMinutes: 7 * 24 * 60 };
   }
   if (/^every\s+month$/i.test(text) || /^monthly$/i.test(text)) {
     return { kind: "monthlyInterval", months: 1 };
   }
+
+  const dailySchedule = parseDailySchedule(text);
+  if (dailySchedule) return dailySchedule;
 
   const intervalSchedule = parseIntervalPart(text);
   if (intervalSchedule) return intervalSchedule;
