@@ -266,6 +266,107 @@ function buildCommands() {
         },
       ],
     },
+
+    {
+      name: "reactionrole",
+      description: "Set up self-assignable reaction roles",
+      options: [
+        {
+          type: 1, // SUB_COMMAND
+          name: "post",
+          description: "Post a new reaction-role message",
+          options: [
+            {
+              type: 3,
+              name: "title",
+              description: "Embed title, e.g. 'What age are you?'",
+              required: true,
+            },
+            {
+              type: 3,
+              name: "description",
+              description: "Embed body text (optional)",
+              required: false,
+            },
+            {
+              type: 7, // CHANNEL
+              name: "channel",
+              description: "Channel to post in (defaults to this channel)",
+              required: false,
+              channel_types: [0], // GUILD_TEXT
+            },
+          ],
+        },
+        {
+          type: 1,
+          name: "add",
+          description:
+            "Attach an emoji -> role mapping to a reaction-role message",
+          options: [
+            {
+              type: 3,
+              name: "message_id",
+              description:
+                "The reaction-role message's ID (from /reactionrole post)",
+              required: true,
+            },
+            {
+              type: 3,
+              name: "emoji",
+              description:
+                "The emoji to react with, e.g. 🧒 or <:custom:12345>",
+              required: true,
+            },
+            {
+              type: 8, // ROLE
+              name: "role",
+              description: "Role to give when someone reacts with this emoji",
+              required: true,
+            },
+            {
+              type: 3,
+              name: "group",
+              description:
+                "Exclusive group name (optional) - e.g. 'age'. Reacting to one option in a group removes the others.",
+              required: false,
+            },
+          ],
+        },
+        {
+          type: 1,
+          name: "remove",
+          description: "Remove an emoji -> role mapping from a message",
+          options: [
+            {
+              type: 3,
+              name: "message_id",
+              description: "The reaction-role message's ID",
+              required: true,
+            },
+            {
+              type: 3,
+              name: "emoji",
+              description: "The emoji whose mapping should be removed",
+              required: true,
+            },
+          ],
+        },
+        {
+          type: 1,
+          name: "list",
+          description: "List the emoji -> role mappings on a message",
+          options: [
+            {
+              type: 3,
+              name: "message_id",
+              description: "The reaction-role message's ID",
+              required: true,
+            },
+          ],
+        },
+      ],
+    },
+
     {
       name: "clear",
       description: "Bulk delete recent messages in this channel",

@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { db } from "./db.js";
 import { isAdmin } from "./utils/permissions.js";
 import {
@@ -28,12 +28,24 @@ import {
   handleWizardModalSubmit,
   handleWizardSelectMenu,
 } from "./reminderWizard.js";
+import {
+  handleReactionRolePost,
+  handleReactionRoleAdd,
+  handleReactionRoleRemove,
+  handleReactionRoleList,
+  handleReactionRoleAddEvent,
+  handleReactionRoleRemoveEvent,
+} from "./reactionRoles.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
 import { registerCommands } from "../register-commands.js";
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessageReactions],
+  // Needed so reactions on messages the bot hasn't got cached (e.g. after a
+  // restart, or an older reaction-role panel) still arrive as fetchable
+  // partials instead of being dropped by discord.js.
+  partials: [Partials.Message, Partials.Reaction, Partials.User],
 });
 
 // Convert discord.js Interaction to match commands.js expected format.
@@ -150,6 +162,30 @@ const COMMAND_TABLE = {
     title: "Timezone Cleared",
     run: (interaction) =>
       handleTimezoneCommand(adaptInteraction(interaction, "clear")),
+  },
+
+  // Reaction-role commands need the raw discord.js interaction (to send
+  // messages, fetch channels/roles, etc.), same as `clear` above, so they
+  // aren't run through adaptInteraction.
+  "reactionrole:post": {
+    title: "Reaction-Role Message Posted",
+    ephemeral: true,
+    run: (interaction) => handleReactionRolePost(interaction),
+  },
+  "reactionrole:add": {
+    title: "Reaction Role Added",
+    ephemeral: true,
+    run: (interaction) => handleReactionRoleAdd(interaction),
+  },
+  "reactionrole:remove": {
+    title: "Reaction Role Removed",
+    ephemeral: true,
+    run: (interaction) => handleReactionRoleRemove(interaction),
+  },
+  "reactionrole:list": {
+    title: "Reaction Roles",
+    ephemeral: true,
+    run: (interaction) => handleReactionRoleList(interaction),
   },
 };
 
@@ -415,6 +451,26 @@ client.on("interactionCreate", async (interaction) => {
     } catch (followUpErr) {
       console.error("Failed to notify user of error:", followUpErr);
     }
+  }
+});
+
+// Reaction roles: adding a reaction may grant a role (and, for mutually
+// exclusive groups, strip a conflicting one); removing a reaction always
+// strips the matching role. Both handlers no-op instantly for reactions
+// that aren't on a configured reaction-role message.
+client.on("messageReactionAdd", async (reaction, user) => {
+  try {
+    await handleReactionRoleAddEvent(reaction, user);
+  } catch (err) {
+    console.error("Reaction role add error:", err);
+  }
+});
+
+client.on("messageReactionRemove", async (reaction, user) => {
+  try {
+    await handleReactionRoleRemoveEvent(reaction, user);
+  } catch (err) {
+    console.error("Reaction role remove error:", err);
   }
 });
 
