@@ -19,10 +19,7 @@ export const ROLE_PERMISSIONS = {
     allowAdmin: true,
   },
   MANAGE_REACTION_ROLES: {
-    roles: [
-      process.env.REACTION_ROLE_MANAGER_ROLE_ID,
-      process.env.REMINDER_MOD_ID_TOKU,
-    ],
+    roles: [process.env.REMINDER_REPEAT_ROLE_ID_TOKU],
     users: ["661140312248549376"],
     allowAdmin: true,
   },
