@@ -379,6 +379,34 @@ function buildCommands() {
         },
       ],
     },
+
+    {
+      name: "leavemessage",
+      description: "Configure where leave notifications are posted",
+      default_member_permissions: "8", // Administrator
+      options: [
+        {
+          type: 1,
+          name: "set",
+          description: "Set the channel for leave notifications",
+          options: [
+            {
+              type: 7,
+              name: "channel",
+              description: "Channel to post leave notifications in",
+              required: true,
+              channel_types: [0],
+            },
+          ],
+        },
+        {
+          type: 1,
+          name: "view",
+          description: "Show the current leave-notification channel",
+        },
+        { type: 1, name: "clear", description: "Disable leave notifications" },
+      ],
+    },
   ];
 }
 

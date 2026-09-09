@@ -4,6 +4,7 @@ import { isAdmin } from "./utils/permissions.js";
 import {
   sendReminderMessage,
   sendBirthdayMessage,
+  sendLeaveMessage,
   clearMessages,
 } from "./discord.js";
 import {
@@ -21,6 +22,7 @@ import {
   handleBirthdayCommand,
   handleTimezoneCommand,
   handleFunCommand,
+  handleLeaveMessageCommand,
 } from "./commands.js";
 import {
   sendReminderTypeMenu,
@@ -39,12 +41,14 @@ import {
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
 import { registerCommands } from "../register-commands.js";
+import { getLeaveChannel } from "./utils/guildSettings.js";
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessageReactions],
-  // Needed so reactions on messages the bot hasn't got cached (e.g. after a
-  // restart, or an older reaction-role panel) still arrive as fetchable
-  // partials instead of being dropped by discord.js.
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMembers,
+  ],
   partials: [Partials.Message, Partials.Reaction, Partials.User],
 });
 
@@ -164,9 +168,6 @@ const COMMAND_TABLE = {
       handleTimezoneCommand(adaptInteraction(interaction, "clear")),
   },
 
-  // Reaction-role commands need the raw discord.js interaction (to send
-  // messages, fetch channels/roles, etc.), same as `clear` above, so they
-  // aren't run through adaptInteraction.
   "reactionrole:post": {
     title: "Reaction-Role Message Posted",
     ephemeral: true,
@@ -186,6 +187,25 @@ const COMMAND_TABLE = {
     title: "Reaction Roles",
     ephemeral: true,
     run: (interaction) => handleReactionRoleList(interaction),
+  },
+
+  "leavemessage:set": {
+    title: "Leave Channel Set",
+    ephemeral: true,
+    run: (interaction) =>
+      handleLeaveMessageCommand(adaptInteraction(interaction, "set")),
+  },
+  "leavemessage:view": {
+    title: "Leave Channel",
+    ephemeral: true,
+    run: (interaction) =>
+      handleLeaveMessageCommand(adaptInteraction(interaction, "view")),
+  },
+  "leavemessage:clear": {
+    title: "Leave Messages Disabled",
+    ephemeral: true,
+    run: (interaction) =>
+      handleLeaveMessageCommand(adaptInteraction(interaction, "clear")),
   },
 };
 
@@ -471,6 +491,16 @@ client.on("messageReactionRemove", async (reaction, user) => {
     await handleReactionRoleRemoveEvent(reaction, user);
   } catch (err) {
     console.error("Reaction role remove error:", err);
+  }
+});
+
+client.on("guildMemberRemove", async (member) => {
+  try {
+    const channelId = await getLeaveChannel(member.guild.id);
+    if (!channelId) return;
+    await sendLeaveMessage(client, channelId, member);
+  } catch (err) {
+    console.error("Failed to send leave message:", err.message);
   }
 });
 

@@ -21,6 +21,12 @@ import {
   setStoredTimezone,
   clearStoredTimezone,
 } from "./utils/timezone.js";
+import { isAdmin } from "./utils/permissions.js";
+import {
+  getLeaveChannel,
+  setLeaveChannel,
+  clearLeaveChannel,
+} from "./utils/guildSettings.js";
 
 /** Pulls named options out of a Discord interaction payload into a flat object. */
 function optionMap(interaction) {
@@ -49,12 +55,6 @@ function parseDuration(str) {
   return null;
 }
 
-/**
- * Parses "8-24", "8am-12am", "22-6" style active-hour ranges into
- * { start, end }, or returns null if the string isn't a valid "A-B" range
- * (missing dash, unrecognized hour, etc.) so the caller can show a
- * friendly error instead of crashing.
- */
 function parseActiveHours(str) {
   const parts = String(str || "").split("-");
   if (parts.length !== 2) return null;
@@ -79,10 +79,6 @@ function parseActiveHours(str) {
   let end = parseHour(b);
   if (start === null || end === null) return null;
 
-  // An end of "12am"/"0" almost always means "through midnight" (e.g.
-  // "8-12am" = active 8am-midnight), not "through the very start of the
-  // day" — except when start is also 0, which is the deliberate
-  // "always active" case handled by isWithinActiveWindow.
   if (end === 0 && start !== 0) end = 24;
 
   return { start, end };
@@ -96,12 +92,6 @@ function appendTimezoneHint(result, isExplicit, timezone) {
   };
 }
 
-/**
- * Parses the "every ..." schedule text and optional active-hours window
- * shared by both repeating-reminder types (plain message repeats and
- * command repeats). Returns either { error } or the parsed fields needed
- * to build a reminder row.
- */
 function parseRepeatingScheduleOptions(opts) {
   const scheduleText = String(opts.every || "").trim();
   const parsedSchedule = parseNaturalSchedule(scheduleText);
@@ -146,15 +136,6 @@ function parseRepeatingScheduleOptions(opts) {
   };
 }
 
-/**
- * Inserts a repeating reminder row (used for both plain-message repeats
- * and command repeats — they only differ in which columns carry the
- * payload). `payload` is `{ title, message, commandName }`.
- *
- * Takes plain identifying fields rather than a raw interaction so it can
- * be called from both the adapted slash-command shape and the reminder
- * wizard's raw Discord.js interactions.
- */
 async function insertRepeatingReminder(
   { guildId, channelId, userId },
   schedule,
@@ -168,9 +149,6 @@ async function insertRepeatingReminder(
     activeEnd,
   } = schedule;
 
-  // Truncate before storing, not just before display, so a too-long title
-  // or message doesn't sit in the DB waiting to fail channel.send() every
-  // single time this reminder fires.
   const title = truncate(payload.title, EMBED_LIMITS.TITLE);
   const message = truncate(payload.message ?? "", EMBED_LIMITS.DESCRIPTION);
 
@@ -223,20 +201,6 @@ async function insertRepeatingReminder(
 
   return { id, scheduleText, windowText };
 }
-
-/**
- * Core reminder-creation functions.
- *
- * These take plain field values (not a Discord interaction shape) so they
- * can be called identically from:
- *   - the slash-command handlers below (which extract fields via optionMap)
- *   - the reminder wizard (reminderWizard.js), which collects the same
- *     fields via buttons/modals/select-menus instead of slash options
- *
- * Permission checks are NOT done here — callers (slash adapters or the
- * wizard) are responsible for calling checkPermission first, since both
- * have access to a real interaction/member to check against.
- */
 
 export async function createOnceReminder({
   guildId,
@@ -355,12 +319,6 @@ export async function createCommandReminder({
   };
 }
 
-/**
- * Slash-command handlers. These are now thin adapters: pull fields out of
- * the adapted interaction shape, run any permission check, then delegate
- * to the core create*Reminder functions above.
- */
-
 export async function handleRemindCommand(interaction) {
   const permissionError = checkPermission(
     interaction,
@@ -477,10 +435,6 @@ export async function handleRemindDelete(interaction) {
   const opts = optionMap(interaction);
   const idPrefix = opts.id;
 
-  // idPrefix is user input placed into a LIKE pattern. % and _ are SQL
-  // wildcards, so an id fragment that happens to contain them could match
-  // reminders it wasn't meant to. Escape them and tell SQLite what the
-  // escape character is.
   const escapedPrefix = String(idPrefix || "").replace(/[\\%_]/g, "\\$&");
 
   const { results } = await db
@@ -793,4 +747,36 @@ export async function handleBirthdayCommand(interaction) {
         error: "Unknown birthday command.",
       };
   }
+}
+
+export async function handleLeaveMessageCommand(interaction) {
+  if (!isAdmin(interaction)) {
+    return { error: "You need Administrator permission to manage this." };
+  }
+
+  const subcommand = interaction.data?.subcommand;
+  const guildId = interaction.guild_id;
+
+  if (subcommand === "set") {
+    const opts = optionMap(interaction);
+    if (!opts.channel) return { error: "A channel is required." };
+    await setLeaveChannel(guildId, opts.channel);
+    return {
+      success: `Leave messages will now be sent in <#${opts.channel}>.`,
+    };
+  }
+
+  if (subcommand === "view") {
+    const channelId = await getLeaveChannel(guildId);
+    return channelId
+      ? { success: `Leave messages are currently sent in <#${channelId}>.` }
+      : { success: "No leave-message channel is configured." };
+  }
+
+  if (subcommand === "clear") {
+    await clearLeaveChannel(guildId);
+    return { success: "Leave messages are now disabled." };
+  }
+
+  return { error: "Unknown leavemessage command." };
 }

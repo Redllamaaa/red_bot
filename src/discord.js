@@ -90,3 +90,21 @@ export async function clearMessages(channel, amount) {
   const deleted = await channel.bulkDelete(amount, true); // true = skip messages >14 days old
   return deleted.size;
 }
+
+export async function sendLeaveMessage(client, channelId, member) {
+  const channel = await client.channels.fetch(channelId).catch(() => null);
+  if (!channel || !channel.isTextBased()) {
+    throw new Error(`Leave channel ${channelId} is missing or not text-based`);
+  }
+
+  const displayName = member.user?.tag || member.user?.username || "Someone";
+
+  await channel.send({
+    embeds: [
+      {
+        description: `👋 **${displayName}** left the server.`,
+        color: COLORS.DEFAULT,
+      },
+    ],
+  });
+}
