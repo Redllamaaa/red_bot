@@ -75,6 +75,8 @@ async function captureEmojiReaction(interaction, message) {
   return emoji;
 }
 
+/** Shared lookup used by add/remove: resolves a panel's message_id to the
+ * live channel + message, or an { error }. */
 async function fetchPanelMessage(interaction, messageId) {
   if (!MESSAGE_ID_RE.test(messageId)) {
     return { error: "That doesn't look like a valid message ID." };
@@ -131,11 +133,11 @@ async function buildMappingsBlock(guildId, messageId) {
     groups.get(r.group_name).push(r.emoji_display);
   }
 
-  const groupNotes = [...groups.entries()].map(
-    ([, emojis]) => `-# ${emojis.join(" ")} are mutually exclusive`,
-  );
+  const groupNotes = [...groups.entries()]
+    .filter(([, emojis]) => emojis.length > 1)
+    .map(([, emojis]) => `-# ${emojis.join(" ")} are mutually exclusive`);
 
-  const groupBlock = groupNotes.length ? `\n${groupNotes.join("\n")}` : "";
+  const groupBlock = groupNotes.length ? `\n\n${groupNotes.join("\n")}` : "";
 
   return `\n\n**Roles:**\n${lines.join("\n")}${groupBlock}`;
 }
