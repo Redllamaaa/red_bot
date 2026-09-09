@@ -3,33 +3,6 @@ import { checkPermission } from "./utils/permissions.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
 
-/**
- * Reaction-role system: an admin posts an embed ("panel") with
- * `/reactionrole post`, then attaches emoji -> role mappings to it with
- * `/reactionrole add`. Mappings can optionally share a `group` name; any
- * two mappings in the same group (even across different panels/messages)
- * are treated as mutually exclusive — reacting to one automatically
- * removes the member's role *and* reaction from any other mapping in that
- * group, so e.g. "Minor" / "18+" behave like a single choice.
- *
- * Picking the emoji: typing a custom emoji by hand (`<:name:id>`) is
- * painful, so `/reactionrole add` and `/reactionrole remove` both accept
- * an optional `emoji` text option, but when it's left out they instead
- * prompt the admin to react to the target message with whichever emoji
- * they want (via Discord's normal emoji picker) and capture that.
- *
- * Two tables back this (see reaction_roles_migration.sql):
- *   reaction_role_messages(message_id, channel_id, guild_id, created_by, created_at)
- *   reaction_roles(id, guild_id, message_id, channel_id, emoji_key,
- *                  emoji_display, role_id, group_name, created_at)
- *
- * emoji_key is what we match incoming reactions against: the emoji's
- * snowflake id for custom emoji, or its unicode/name string otherwise.
- * emoji_display is a renderable form of the emoji (either the original
- * typed text, or reconstructed from a captured reaction), kept so
- * `/reactionrole list` reads nicely.
- */
-
 const MESSAGE_ID_RE = /^\d{17,20}$/;
 const CAPTURE_TIMEOUT_MS = 60_000;
 
@@ -70,13 +43,6 @@ function findCachedReaction(message, emojiKey) {
   );
 }
 
-/**
- * Prompts the admin (via editing their deferred reply) to react to
- * `message` with the emoji they want, then waits up to 60s for it.
- * Removes their reaction afterward (it was only there to tell us which
- * emoji to use, not to actually grant them a role). Returns emoji info or
- * `null` on timeout.
- */
 async function captureEmojiReaction(interaction, message) {
   const adminId = interaction.member?.user?.id || interaction.user?.id;
 
@@ -109,8 +75,6 @@ async function captureEmojiReaction(interaction, message) {
   return emoji;
 }
 
-/** Shared lookup used by add/remove: resolves a panel's message_id to the
- * live channel + message, or an { error }. */
 async function fetchPanelMessage(interaction, messageId) {
   if (!MESSAGE_ID_RE.test(messageId)) {
     return { error: "That doesn't look like a valid message ID." };
@@ -143,6 +107,70 @@ async function fetchPanelMessage(interaction, messageId) {
   }
 
   return { channel, message };
+}
+
+/** Builds the "emoji → role" list appended to the panel embed itself. */
+async function buildMappingsBlock(guildId, messageId) {
+  const { results } = await db
+    .prepare(
+      `SELECT emoji_display, role_id, group_name FROM reaction_roles WHERE guild_id = ? AND message_id = ?`,
+    )
+    .bind(guildId, messageId)
+    .all();
+
+  if (!results.length) return "";
+
+  const lines = results.map(
+    (r) =>
+      `${r.emoji_display} → <@&${r.role_id}>${
+        r.group_name ? ` _(exclusive: ${r.group_name})_` : ""
+      }`,
+  );
+
+  return `\n\n**Roles:**\n${lines.join("\n")}`;
+}
+
+async function refreshPanelEmbed(interaction, messageId) {
+  const { results } = await db
+    .prepare(
+      `SELECT channel_id, title, description FROM reaction_role_messages WHERE message_id = ? AND guild_id = ?`,
+    )
+    .bind(messageId, interaction.guildId)
+    .all();
+
+  const row = results[0];
+  if (!row) return;
+
+  const channel = await interaction.guild.channels
+    .fetch(row.channel_id)
+    .catch(() => null);
+  if (!channel) return;
+
+  const message = await channel.messages.fetch(messageId).catch(() => null);
+  if (!message) return;
+
+  const base = row.description || "React below to get a role.";
+  const mappingsBlock = await buildMappingsBlock(
+    interaction.guildId,
+    messageId,
+  );
+
+  await message
+    .edit({
+      embeds: [
+        {
+          title: truncate(row.title, EMBED_LIMITS.TITLE),
+          description: truncate(base + mappingsBlock, EMBED_LIMITS.DESCRIPTION),
+          color: COLORS.DEFAULT,
+        },
+      ],
+    })
+    .catch((err) =>
+      console.error(
+        "Failed to refresh reaction-role panel embed:",
+        err.message,
+      ),
+    );
 }
 
 /** `/reactionrole post` - creates the panel message admins attach mappings to. */
@@ -184,8 +212,8 @@ export async function handleReactionRolePost(interaction) {
 
   await db
     .prepare(
-      `INSERT INTO reaction_role_messages (message_id, channel_id, guild_id, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO reaction_role_messages (message_id, channel_id, guild_id, created_by, created_at, title, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       message.id,
@@ -193,6 +221,8 @@ export async function handleReactionRolePost(interaction) {
       interaction.guildId,
       interaction.member?.user?.id || interaction.user?.id,
       new Date().toISOString(),
+      title,
+      description,
     )
     .run();
 
@@ -285,6 +315,8 @@ export async function handleReactionRoleAdd(interaction) {
     };
   }
 
+  await refreshPanelEmbed(interaction, messageId);
+
   return {
     success: `Mapped ${emoji.display} → <@&${role.id}>${
       group ? ` (exclusive group \`${group}\`)` : ""
@@ -337,6 +369,8 @@ export async function handleReactionRoleRemove(interaction) {
   // users, not just the admin's capture click) so it doesn't look active.
   const staleReaction = findCachedReaction(message, emoji.key);
   if (staleReaction) await staleReaction.remove().catch(() => {});
+
+  await refreshPanelEmbed(interaction, messageId);
 
   return {
     success: `Removed the mapping for ${emoji.display} on message \`${messageId}\`.`,
