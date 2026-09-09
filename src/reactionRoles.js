@@ -12,6 +12,12 @@ import { truncate } from "./utils/utils.js";
  * removes the member's role *and* reaction from any other mapping in that
  * group, so e.g. "Minor" / "18+" behave like a single choice.
  *
+ * Picking the emoji: typing a custom emoji by hand (`<:name:id>`) is
+ * painful, so `/reactionrole add` and `/reactionrole remove` both accept
+ * an optional `emoji` text option, but when it's left out they instead
+ * prompt the admin to react to the target message with whichever emoji
+ * they want (via Discord's normal emoji picker) and capture that.
+ *
  * Two tables back this (see reaction_roles_migration.sql):
  *   reaction_role_messages(message_id, channel_id, guild_id, created_by, created_at)
  *   reaction_roles(id, guild_id, message_id, channel_id, emoji_key,
@@ -19,11 +25,13 @@ import { truncate } from "./utils/utils.js";
  *
  * emoji_key is what we match incoming reactions against: the emoji's
  * snowflake id for custom emoji, or its unicode/name string otherwise.
- * emoji_display is the original text the admin typed (e.g. "<:vibe:12345>"
- * or "🧒"), kept only so `/reactionrole list` reads nicely.
+ * emoji_display is a renderable form of the emoji (either the original
+ * typed text, or reconstructed from a captured reaction), kept so
+ * `/reactionrole list` reads nicely.
  */
 
 const MESSAGE_ID_RE = /^\d{17,20}$/;
+const CAPTURE_TIMEOUT_MS = 60_000;
 
 function parseEmojiInput(raw) {
   const str = String(raw || "").trim();
@@ -39,8 +47,102 @@ function parseEmojiInput(raw) {
   return { key: str, reactable: str, display: str };
 }
 
+/** Same shape as parseEmojiInput, but built from a discord.js Emoji object
+ * (i.e. from an actual reaction) rather than typed text. */
+function emojiInfoFromReactionEmoji(emoji) {
+  if (emoji.id) {
+    const display = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}>`;
+    return { key: emoji.id, reactable: emoji.id, display };
+  }
+  return { key: emoji.name, reactable: emoji.name, display: emoji.name };
+}
+
 function emojiKeyFromReaction(reaction) {
   return reaction.emoji.id || reaction.emoji.name;
+}
+
+function findCachedReaction(message, emojiKey) {
+  return (
+    message.reactions.cache.get(emojiKey) ||
+    message.reactions.cache.find(
+      (r) => (r.emoji.id || r.emoji.name) === emojiKey,
+    )
+  );
+}
+
+/**
+ * Prompts the admin (via editing their deferred reply) to react to
+ * `message` with the emoji they want, then waits up to 60s for it.
+ * Removes their reaction afterward (it was only there to tell us which
+ * emoji to use, not to actually grant them a role). Returns emoji info or
+ * `null` on timeout.
+ */
+async function captureEmojiReaction(interaction, message) {
+  const adminId = interaction.member?.user?.id || interaction.user?.id;
+
+  await interaction.editReply({
+    embeds: [
+      {
+        title: "Waiting for your reaction…",
+        description: `React to [the target message](${message.url}) with the emoji you want to use for this role. You have 60 seconds.`,
+        color: COLORS.DEFAULT,
+      },
+    ],
+  });
+
+  const collected = await message
+    .awaitReactions({
+      filter: (reaction, user) => user.id === adminId,
+      max: 1,
+      time: CAPTURE_TIMEOUT_MS,
+      errors: ["time"],
+    })
+    .catch(() => null);
+
+  if (!collected || !collected.size) return null;
+
+  const reaction = collected.first();
+  const emoji = emojiInfoFromReactionEmoji(reaction.emoji);
+
+  await reaction.users.remove(adminId).catch(() => {});
+
+  return emoji;
+}
+
+/** Shared lookup used by add/remove: resolves a panel's message_id to the
+ * live channel + message, or an { error }. */
+async function fetchPanelMessage(interaction, messageId) {
+  if (!MESSAGE_ID_RE.test(messageId)) {
+    return { error: "That doesn't look like a valid message ID." };
+  }
+
+  const { results: msgRows } = await db
+    .prepare(
+      `SELECT channel_id FROM reaction_role_messages WHERE message_id = ? AND guild_id = ?`,
+    )
+    .bind(messageId, interaction.guildId)
+    .all();
+
+  if (!msgRows.length) {
+    return {
+      error: `No reaction-role message found with ID \`${messageId}\`. Create one first with \`/reactionrole post\`.`,
+    };
+  }
+
+  const channelId = msgRows[0].channel_id;
+  const channel = await interaction.guild.channels
+    .fetch(channelId)
+    .catch(() => null);
+  if (!channel) {
+    return { error: "Couldn't find the channel for that message anymore." };
+  }
+
+  const message = await channel.messages.fetch(messageId).catch(() => null);
+  if (!message) {
+    return { error: "Couldn't find that message anymore." };
+  }
+
+  return { channel, message };
 }
 
 /** `/reactionrole post` - creates the panel message admins attach mappings to. */
@@ -98,8 +200,9 @@ export async function handleReactionRolePost(interaction) {
     success:
       `Reaction-role message posted in <#${targetChannel.id}>.\n` +
       `Message ID: \`${message.id}\`\n` +
-      `Now use \`/reactionrole add\` with this ID to attach emoji → role mappings ` +
-      `(use the same \`group\` name on mappings that should be mutually exclusive).`,
+      `Now use \`/reactionrole add\` with this ID to attach roles ` +
+      `(use the same \`group\` name on options that should be mutually exclusive). ` +
+      `You'll be asked to react with the emoji you want, so no need to type it.`,
   };
 }
 
@@ -113,42 +216,13 @@ export async function handleReactionRoleAdd(interaction) {
   if (permissionError) return permissionError;
 
   const messageId = interaction.options.getString("message_id", true).trim();
-  const emojiRaw = interaction.options.getString("emoji", true);
   const role = interaction.options.getRole("role", true);
   const group = interaction.options.getString("group") || null;
+  const emojiRaw = interaction.options.getString("emoji");
 
-  if (!MESSAGE_ID_RE.test(messageId)) {
-    return { error: "That doesn't look like a valid message ID." };
-  }
-
-  const emoji = parseEmojiInput(emojiRaw);
-  if (!emoji) return { error: "Couldn't parse that emoji." };
-
-  const { results: msgRows } = await db
-    .prepare(
-      `SELECT channel_id FROM reaction_role_messages WHERE message_id = ? AND guild_id = ?`,
-    )
-    .bind(messageId, interaction.guildId)
-    .all();
-
-  if (!msgRows.length) {
-    return {
-      error: `No reaction-role message found with ID \`${messageId}\`. Create one first with \`/reactionrole post\`.`,
-    };
-  }
-
-  const channelId = msgRows[0].channel_id;
-  const channel = await interaction.guild.channels
-    .fetch(channelId)
-    .catch(() => null);
-  if (!channel) {
-    return { error: "Couldn't find the channel for that message anymore." };
-  }
-
-  const message = await channel.messages.fetch(messageId).catch(() => null);
-  if (!message) {
-    return { error: "Couldn't find that message anymore." };
-  }
+  const panel = await fetchPanelMessage(interaction, messageId);
+  if (panel.error) return panel;
+  const { channel, message } = panel;
 
   if (role.managed || role.id === interaction.guildId) {
     return {
@@ -164,6 +238,20 @@ export async function handleReactionRoleAdd(interaction) {
     };
   }
 
+  let emoji;
+  if (emojiRaw) {
+    emoji = parseEmojiInput(emojiRaw);
+    if (!emoji) return { error: "Couldn't parse that emoji." };
+  } else {
+    emoji = await captureEmojiReaction(interaction, message);
+    if (!emoji) {
+      return {
+        error:
+          "Didn't see a reaction in time — run `/reactionrole add` again and react within 60 seconds.",
+      };
+    }
+  }
+
   try {
     await db
       .prepare(
@@ -174,7 +262,7 @@ export async function handleReactionRoleAdd(interaction) {
       .bind(
         interaction.guildId,
         messageId,
-        channelId,
+        channel.id,
         emoji.key,
         emoji.display,
         role.id,
@@ -193,12 +281,12 @@ export async function handleReactionRoleAdd(interaction) {
   } catch (err) {
     console.error("Failed to react with configured emoji:", err.message);
     return {
-      error: `Mapping saved, but I couldn't add the reaction myself (${err.message}). Make sure I can see/use that emoji and have Add Reactions permission, or react to the message manually.`,
+      error: `Mapping saved, but I couldn't add the reaction myself (${err.message}). Make sure I have Add Reactions permission, or react to the message manually.`,
     };
   }
 
   return {
-    success: `Mapped ${emojiRaw} → <@&${role.id}>${
+    success: `Mapped ${emoji.display} → <@&${role.id}>${
       group ? ` (exclusive group \`${group}\`)` : ""
     } on message \`${messageId}\`.`,
   };
@@ -214,9 +302,25 @@ export async function handleReactionRoleRemove(interaction) {
   if (permissionError) return permissionError;
 
   const messageId = interaction.options.getString("message_id", true).trim();
-  const emojiRaw = interaction.options.getString("emoji", true);
-  const emoji = parseEmojiInput(emojiRaw);
-  if (!emoji) return { error: "Couldn't parse that emoji." };
+  const emojiRaw = interaction.options.getString("emoji");
+
+  const panel = await fetchPanelMessage(interaction, messageId);
+  if (panel.error) return panel;
+  const { message } = panel;
+
+  let emoji;
+  if (emojiRaw) {
+    emoji = parseEmojiInput(emojiRaw);
+    if (!emoji) return { error: "Couldn't parse that emoji." };
+  } else {
+    emoji = await captureEmojiReaction(interaction, message);
+    if (!emoji) {
+      return {
+        error:
+          "Didn't see a reaction in time — run `/reactionrole remove` again and react within 60 seconds.",
+      };
+    }
+  }
 
   const result = await db
     .prepare(
@@ -226,11 +330,16 @@ export async function handleReactionRoleRemove(interaction) {
     .run();
 
   if (!result.meta?.changes) {
-    return { error: "No mapping found for that emoji on that message." };
+    return { error: `No mapping found for ${emoji.display} on that message.` };
   }
 
+  // The mapping is gone, so clear the reaction off the message too (all
+  // users, not just the admin's capture click) so it doesn't look active.
+  const staleReaction = findCachedReaction(message, emoji.key);
+  if (staleReaction) await staleReaction.remove().catch(() => {});
+
   return {
-    success: `Removed the mapping for ${emojiRaw} on message \`${messageId}\`. (The old reaction on the message itself isn't auto-removed — feel free to clear it manually.)`,
+    success: `Removed the mapping for ${emoji.display} on message \`${messageId}\`.`,
   };
 }
 
@@ -333,12 +442,7 @@ export async function handleReactionRoleAddEvent(reaction, user) {
               await guild.channels.fetch(row.channel_id)
             ).messages.fetch(row.message_id);
 
-      const otherReaction =
-        otherMessage.reactions.cache.get(row.emoji_key) ||
-        otherMessage.reactions.cache.find(
-          (r) => (r.emoji.id || r.emoji.name) === row.emoji_key,
-        );
-
+      const otherReaction = findCachedReaction(otherMessage, row.emoji_key);
       if (otherReaction) await otherReaction.users.remove(user.id);
     } catch (err) {
       console.error(

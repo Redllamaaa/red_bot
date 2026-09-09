@@ -311,13 +311,6 @@ function buildCommands() {
               required: true,
             },
             {
-              type: 3,
-              name: "emoji",
-              description:
-                "The emoji to react with, e.g. 🧒 or <:custom:12345>",
-              required: true,
-            },
-            {
               type: 8, // ROLE
               name: "role",
               description: "Role to give when someone reacts with this emoji",
@@ -328,6 +321,13 @@ function buildCommands() {
               name: "group",
               description:
                 "Exclusive group name (optional) - e.g. 'age'. Reacting to one option in a group removes the others.",
+              required: false,
+            },
+            {
+              type: 3,
+              name: "emoji",
+              description:
+                "Emoji to use, e.g. 🧒 or <:custom:12345> (optional - omit this and you'll be asked to react with it instead)",
               required: false,
             },
           ],
@@ -346,8 +346,9 @@ function buildCommands() {
             {
               type: 3,
               name: "emoji",
-              description: "The emoji whose mapping should be removed",
-              required: true,
+              description:
+                "The emoji whose mapping should be removed (optional - omit this and you'll be asked to react with it instead)",
+              required: false,
             },
           ],
         },
