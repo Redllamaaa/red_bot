@@ -120,14 +120,24 @@ async function buildMappingsBlock(guildId, messageId) {
 
   if (!results.length) return "";
 
-  const lines = results.map(
-    (r) =>
-      `${r.emoji_display} → <@&${r.role_id}>${
-        r.group_name ? ` _(exclusive: ${r.group_name})_` : ""
-      }`,
+  const lines = results.map((r) => `${r.emoji_display} → <@&${r.role_id}>`);
+
+  // Group exclusivity notes go on their own line at the bottom, one per
+  // group, rather than repeated on every role line in that group.
+  const groups = new Map();
+  for (const r of results) {
+    if (!r.group_name) continue;
+    if (!groups.has(r.group_name)) groups.set(r.group_name, []);
+    groups.get(r.group_name).push(r.emoji_display);
+  }
+
+  const groupNotes = [...groups.entries()].map(
+    ([, emojis]) => `-# ${emojis.join(" ")} are mutually exclusive`,
   );
 
-  return `\n\n**Roles:**\n${lines.join("\n")}`;
+  const groupBlock = groupNotes.length ? `\n${groupNotes.join("\n")}` : "";
+
+  return `\n\n**Roles:**\n${lines.join("\n")}${groupBlock}`;
 }
 
 async function refreshPanelEmbed(interaction, messageId) {
