@@ -300,8 +300,7 @@ function buildCommands() {
         {
           type: 1,
           name: "add",
-          description:
-            "Attach an emoji -> role mapping to a reaction-role message",
+          description: "Attach an emoji",
           options: [
             {
               type: 3,
@@ -311,7 +310,7 @@ function buildCommands() {
               required: true,
             },
             {
-              type: 8, // ROLE
+              type: 8,
               name: "role",
               description: "Role to give when someone reacts with this emoji",
               required: true,
@@ -326,8 +325,7 @@ function buildCommands() {
             {
               type: 3,
               name: "emoji",
-              description:
-                "Emoji to use, e.g. 🧒 or <:custom:12345> (optional - omit this and you'll be asked to react with it instead)",
+              description: "Emoji to use, e.g. 🧒 or <:custom:12345>",
               required: false,
             },
           ],
@@ -346,8 +344,7 @@ function buildCommands() {
             {
               type: 3,
               name: "emoji",
-              description:
-                "The emoji whose mapping should be removed (optional - omit this and you'll be asked to react with it instead)",
+              description: "The emoji whose mapping should be removed",
               required: false,
             },
           ],
