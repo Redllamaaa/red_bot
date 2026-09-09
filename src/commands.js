@@ -21,7 +21,6 @@ import {
   setStoredTimezone,
   clearStoredTimezone,
 } from "./utils/timezone.js";
-import { isAdmin } from "./utils/permissions.js";
 import {
   getLeaveChannel,
   setLeaveChannel,
