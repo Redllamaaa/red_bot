@@ -102,7 +102,7 @@ export async function sendLeaveMessage(client, channelId, member) {
   await channel.send({
     embeds: [
       {
-        description: `👋 **${displayName}** left the server.`,
+        description: `So... **${displayName}** left the server, HOPE THEY ARE HAPPIED NOW!, farewell TwT.`,
         color: COLORS.DEFAULT,
       },
     ],
