@@ -170,9 +170,9 @@ async function insertRepeatingReminder(
     .prepare(
       `INSERT INTO reminders
      (id, guild_id, channel_id, created_by, type, title, message, command_name, ping_role_id,
-      interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone,
+      interval_minutes, schedule_text, active_hours_start, active_hours_end, timezone, monthly_anchor_day,
       next_eligible_at, snooze_enabled, enabled)
-     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+     VALUES (?, ?, ?, ?, 'repeating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
     .bind(
       id,
@@ -188,6 +188,7 @@ async function insertRepeatingReminder(
       activeStart,
       activeEnd,
       timezone,
+      parsedSchedule?.kind === "monthlyInterval" ? now.getUTCDate() : null,
       nextEligible.toISOString(),
       payload.snoozeEnabled ? 1 : 0,
     )

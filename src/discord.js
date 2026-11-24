@@ -6,7 +6,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 /**
  * Sends a message (with optional embed + role ping) to a channel using discord.js.
  */
-export async function sendReminderMessage(client, reminder) {
+export async function sendReminderMessage(client, reminder, nonce) {
   const channel = await client.channels.fetch(reminder.channel_id);
   if (!channel) {
     throw new Error(`Channel ${reminder.channel_id} not found.`);
@@ -49,6 +49,7 @@ export async function sendReminderMessage(client, reminder) {
       : [];
 
   await channel.send({
+    ...(nonce ? { nonce, enforceNonce: true } : {}),
     content,
     allowedMentions,
     embeds: [
