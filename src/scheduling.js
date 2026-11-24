@@ -429,7 +429,12 @@ function nthWeekdayDate(year, monthIndex, weekdayName, ordinal) {
   return new Date(Date.UTC(year, monthIndex, candidateDay));
 }
 
-function nextScheduleOccurrence(schedule, reference, timeZone = "UTC") {
+function nextScheduleOccurrence(
+  schedule,
+  reference,
+  timeZone = "UTC",
+  monthlyAnchorDay = reference.getUTCDate(),
+) {
   if (!schedule) return null;
 
   if (schedule.kind === "interval") {
@@ -437,8 +442,13 @@ function nextScheduleOccurrence(schedule, reference, timeZone = "UTC") {
   }
 
   if (schedule.kind === "monthlyInterval") {
+    const year = reference.getUTCFullYear();
+    const month = reference.getUTCMonth() + schedule.months;
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     const candidate = new Date(reference.getTime());
-    candidate.setUTCMonth(candidate.getUTCMonth() + schedule.months);
+    candidate.setUTCDate(1);
+    candidate.setUTCMonth(month);
+    candidate.setUTCDate(Math.min(monthlyAnchorDay, daysInMonth));
     return candidate;
   }
 
@@ -588,6 +598,7 @@ export function computeNextEligible(reminder, now) {
       parsed,
       now,
       reminder.timezone || "UTC",
+      reminder.monthly_anchor_day ?? now.getUTCDate(),
     );
     if (candidate) {
       const next = isWithinActiveWindow(reminder, candidate)

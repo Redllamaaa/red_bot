@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { db } from "./db.js";
 import { isAdmin } from "./utils/permissions.js";
@@ -381,7 +382,11 @@ client.on("interactionCreate", async (interaction) => {
       const snoozedUntil = new Date(Date.now() + snoozeMinutes * 60 * 1000);
 
       await db
-        .prepare(`UPDATE reminders SET next_eligible_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE reminders
+           SET next_eligible_at = ?, processing_token = NULL, processing_until = NULL
+           WHERE id = ?`,
+        )
         .bind(snoozedUntil.toISOString(), reminderId)
         .run();
 
@@ -529,6 +534,14 @@ async function mapWithConcurrency(items, limit, worker) {
 }
 
 const REMINDER_PROCESSING_CONCURRENCY = 8;
+const REMINDER_CLAIM_MS = 2 * 60 * 1000;
+
+function reminderNonce(reminderId, dueAt) {
+  return createHash("sha256")
+    .update(`${reminderId}:${dueAt}`)
+    .digest("hex")
+    .slice(0, 25);
+}
 
 /**
  * Process normal reminders.
@@ -543,10 +556,11 @@ async function processDueReminders() {
          FROM reminders
          WHERE enabled = 1
            AND next_eligible_at <= ?
+           AND (processing_until IS NULL OR processing_until <= ?)
          ORDER BY next_eligible_at ASC
          LIMIT 100`,
       )
-      .bind(now.toISOString())
+      .bind(now.toISOString(), now.toISOString())
       .all();
 
     await mapWithConcurrency(due, REMINDER_PROCESSING_CONCURRENCY, (reminder) =>
@@ -561,72 +575,73 @@ async function processDueReminders() {
  * Sends (or reschedules) a single due reminder.
  */
 async function processReminder(reminder, now) {
+  const dueAt = reminder.next_eligible_at;
+  const claimToken = crypto.randomUUID();
+  const claimNow = new Date();
+
   try {
+    const { results: claimed } = await db
+      .prepare(
+        `UPDATE reminders
+         SET processing_token = ?, processing_until = ?
+         WHERE id = ? AND enabled = 1 AND next_eligible_at = ?
+           AND (processing_until IS NULL OR processing_until <= ?)
+         RETURNING id`,
+      )
+      .bind(
+        claimToken,
+        new Date(claimNow.getTime() + REMINDER_CLAIM_MS).toISOString(),
+        reminder.id,
+        dueAt,
+        claimNow.toISOString(),
+      )
+      .all();
+
+    if (!claimed.length) return;
+
+    let nextEligible;
+    let lastSentAt = reminder.last_sent_at;
+    let enabled = reminder.enabled;
+
     if (!isWithinActiveWindow(reminder, now)) {
-      const next = nextWindowStart(reminder, now);
+      nextEligible = nextWindowStart(reminder, now);
+    } else {
+      await sendReminderMessage(
+        client,
+        reminder,
+        reminderNonce(reminder.id, dueAt),
+      );
+      lastSentAt = now.toISOString();
 
-      await db
-        .prepare(
-          `UPDATE reminders
-           SET next_eligible_at = ?
-           WHERE id = ?`,
-        )
-        .bind(next.toISOString(), reminder.id)
-        .run();
-
-      return;
-    }
-
-    await sendReminderMessage(client, reminder);
-
-    if (reminder.type === "once") {
-      if (reminder.snooze_enabled && !reminder.last_sent_at) {
-        // First send: keep the reminder active so the user can snooze it,
-        // but push next_eligible_at far into the future so the scheduler
-        // (which selects on `next_eligible_at <= now`) doesn't immediately
-        // re-select and re-send this row on the very next tick. If the
-        // user snoozes, the button handler in this file overwrites
-        // next_eligible_at with the real snooze time.
-        const farFuture = new Date(
-          now.getTime() + 100 * 365 * 24 * 60 * 60 * 1000,
-        );
-
-        await db
-          .prepare(
-            `UPDATE reminders
-             SET last_sent_at = ?,
-                 next_eligible_at = ?
-             WHERE id = ?`,
-          )
-          .bind(now.toISOString(), farFuture.toISOString(), reminder.id)
-          .run();
+      if (reminder.type === "once") {
+        if (reminder.snooze_enabled && !reminder.last_sent_at) {
+          // Keep it active for snoozing without making it due again immediately.
+          nextEligible = new Date(
+            now.getTime() + 100 * 365 * 24 * 60 * 60 * 1000,
+          );
+        } else {
+          enabled = 0;
+          nextEligible = new Date(dueAt);
+        }
       } else {
-        // Either snooze was never enabled, or this is a re-fire after a
-        // snooze fired again — either way, it's done now.
-        await db
-          .prepare(
-            `UPDATE reminders
-             SET enabled = 0,
-                 last_sent_at = ?
-             WHERE id = ?`,
-          )
-          .bind(now.toISOString(), reminder.id)
-          .run();
+        nextEligible = computeNextEligible(reminder, now);
       }
-
-      return;
     }
-
-    const next = computeNextEligible(reminder, now);
 
     await db
       .prepare(
         `UPDATE reminders
-         SET last_sent_at = ?,
-             next_eligible_at = ?
-         WHERE id = ?`,
+         SET last_sent_at = ?, next_eligible_at = ?, enabled = ?,
+             processing_token = NULL, processing_until = NULL
+         WHERE id = ? AND enabled = 1 AND processing_token = ?`,
       )
-      .bind(now.toISOString(), next.toISOString(), reminder.id)
+      .bind(
+        lastSentAt,
+        nextEligible.toISOString(),
+        enabled,
+        reminder.id,
+        claimToken,
+      )
       .run();
   } catch (err) {
     console.error(`Failed to process reminder ${reminder.id}:`, err.message);
