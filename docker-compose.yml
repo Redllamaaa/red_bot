@@ -1,0 +1,7 @@
+services:
+  red-bot:
+    build: .
+    container_name: red-bot
+    restart: unless-stopped
+    env_file:
+      - .env

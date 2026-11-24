@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log*
+.git
+.env
+.env.local
+.dev.vars
+.dev.vars.*
+.wrangler
+Dockerfile
+docker-compose.yml
