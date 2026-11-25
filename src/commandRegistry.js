@@ -41,6 +41,8 @@ async function fetchFoxImage() {
     throw new Error("fox API returned an unexpected response shape");
   }
   return { text: "Here's a fox for you! 🦊", image: data.link };
+
+  console.log("fox link:", data.link);
 }
 
 export const commandRegistry = {
