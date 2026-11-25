@@ -219,6 +219,7 @@ const FUN_COMMAND_TITLES = {
   pizzaidea: "Pizza Idea",
   lifetruth: "Life Truth",
   thought: "Thought",
+  fox: "Random Fox Picture",
 };
 for (const name of Object.keys(commandRegistry)) {
   COMMAND_TABLE[name] = {

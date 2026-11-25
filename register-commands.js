@@ -8,6 +8,7 @@ const FUN_COMMAND_DESCRIPTIONS = {
   pizzaidea: "Get a random pizza topping idea",
   lifetruth: "Get a random life truth",
   thought: "Get a random thought",
+  fox: "Get a random fox picture",
 };
 
 function buildCommands() {

@@ -1,33 +1,46 @@
 const FUN_API_TIMEOUT_MS = 8000;
 
-async function fetchFunApi(endpoint) {
+async function fetchJson(url, label) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FUN_API_TIMEOUT_MS);
 
-  let res;
   try {
-    res = await fetch(`https://my-fun-api.onrender.com/${endpoint}`, {
-      signal: controller.signal,
-    });
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`${label} API returned ${res.status}`);
+    return await res.json();
   } catch (err) {
     if (err.name === "AbortError") {
-      throw new Error(
-        `${endpoint} API timed out after ${FUN_API_TIMEOUT_MS}ms`,
-      );
+      throw new Error(`${label} API timed out after ${FUN_API_TIMEOUT_MS}ms`);
     }
     throw err;
   } finally {
     clearTimeout(timeout);
   }
+}
 
-  if (!res.ok) throw new Error(`${endpoint} API returned ${res.status}`);
-
-  const data = await res.json();
+async function fetchFunApi(endpoint) {
+  const data = await fetchJson(
+    `https://my-fun-api.onrender.com/${endpoint}`,
+    endpoint,
+  );
   const values = data?.data ? Object.values(data.data) : [];
   if (!values.length) {
     throw new Error(`${endpoint} API returned an unexpected response shape`);
   }
   return values[0]; // grabs whichever field it returns
+}
+
+// Returns { text, image } instead of a plain string; runFunCommand knows
+// how to handle both shapes.
+async function fetchFoxImage() {
+  const data = await fetchJson(
+    "https://api.some-random-api.com/img/fox",
+    "fox",
+  );
+  if (typeof data?.link !== "string") {
+    throw new Error("fox API returned an unexpected response shape");
+  }
+  return { text: "Here's a fox for you! 🦊", image: data.link };
 }
 
 export const commandRegistry = {
@@ -37,6 +50,7 @@ export const commandRegistry = {
   pizzaidea: () => fetchFunApi("pizzaidea"),
   lifetruth: () => fetchFunApi("lifetruth"),
   thought: () => fetchFunApi("thought"),
+  fox: () => fetchFoxImage(),
 };
 
 export const commandChoices = Object.keys(commandRegistry).map((name) => ({
@@ -58,6 +72,9 @@ export async function runFunCommand(commandName) {
   }
   try {
     const result = await fn();
+    if (result && typeof result === "object") {
+      return { success: result.text, image: result.image };
+    }
     return { success: result };
   } catch (err) {
     console.error(`${commandName} fetch failed:`, err.message);

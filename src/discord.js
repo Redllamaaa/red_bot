@@ -13,9 +13,11 @@ export async function sendReminderMessage(client, reminder, nonce) {
   }
 
   let description = reminder.message;
+  let image;
   if (reminder.command_name) {
     const result = await runFunCommand(reminder.command_name);
     description = result.success ?? result.error;
+    image = result.image;
   }
 
   const hasRole = Boolean(reminder.ping_role_id);
@@ -57,6 +59,7 @@ export async function sendReminderMessage(client, reminder, nonce) {
         title: truncate(reminder.title, EMBED_LIMITS.TITLE),
         description: truncate(description, EMBED_LIMITS.DESCRIPTION),
         color: COLORS.REMINDER_SENT,
+        ...(image ? { image: { url: image } } : {}),
         footer: {
           text:
             reminder.type === "once"
