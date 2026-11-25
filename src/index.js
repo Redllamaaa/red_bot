@@ -70,13 +70,14 @@ function adaptInteraction(interaction, subcommandOverride) {
   };
 }
 
-function createEmbed({ title, description, color = COLORS.DEFAULT }) {
+function createEmbed({ title, description, color = COLORS.DEFAULT, image }) {
   return {
     embeds: [
       {
         title: truncate(title, EMBED_LIMITS.TITLE),
         description: truncate(description, EMBED_LIMITS.DESCRIPTION),
         color,
+        ...(image ? { image: { url: image } } : {}),
       },
     ],
   };
@@ -279,6 +280,7 @@ async function dispatchCommand(interaction) {
       title: isError ? "Error" : title,
       description: result.success || result.error,
       color: isError ? COLORS.ERROR : entry.color || COLORS.DEFAULT,
+      image: isError ? undefined : result.image,
     }),
   });
 
