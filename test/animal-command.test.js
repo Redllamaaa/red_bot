@@ -13,7 +13,7 @@ test("animal commands download and return a Discord image attachment", async (t)
     calls.push(String(url));
     return calls.length === 1
       ? Response.json({
-          image: "https://i.imgur.com/example.jpeg",
+          image: "https://images.example.net/example.jpeg",
           fact: "A test fact.",
         })
       : new Response(new Uint8Array([1, 2, 3]), {
@@ -28,6 +28,6 @@ test("animal commands download and return a Discord image attachment", async (t)
   assert.deepEqual([...result.image.attachment], [1, 2, 3]);
   assert.deepEqual(calls, [
     "https://api.some-random-api.com/animal/cat",
-    "https://i.imgur.com/example.jpeg",
+    "https://images.example.net/example.jpeg",
   ]);
 });

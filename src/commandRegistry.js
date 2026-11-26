@@ -43,7 +43,7 @@ async function fetchAnimal(animal) {
   }
 
   const imageUrl = new URL(data.image);
-  if (imageUrl.protocol !== "https:" || imageUrl.hostname !== "i.imgur.com") {
+  if (imageUrl.protocol !== "https:" || imageUrl.username || imageUrl.password) {
     throw new Error(`${animal} API returned an unsupported image URL`);
   }
 
