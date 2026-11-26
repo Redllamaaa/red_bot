@@ -339,11 +339,11 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    const [, , duration, reminderId] = interaction.customId.split(":");
+    const [, , duration, reminderId, sentAt] = interaction.customId.split(":");
     const snoozeMinutes =
       duration === "30m" ? 30 : duration === "1h" ? 60 : null;
 
-    if (!snoozeMinutes) {
+    if (!snoozeMinutes || !/^\d{13}$/.test(sentAt || "")) {
       await interaction.reply({
         content: "Invalid snooze duration.",
         ephemeral: true,
@@ -354,7 +354,7 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const { results } = await db
         .prepare(
-          `SELECT id, type, snooze_enabled, enabled FROM reminders WHERE id = ?`,
+          `SELECT id, created_by, last_sent_at, next_eligible_at, snooze_enabled, enabled FROM reminders WHERE id = ?`,
         )
         .bind(reminderId)
         .all();
@@ -375,6 +375,20 @@ client.on("interactionCreate", async (interaction) => {
         });
         return;
       }
+      if (Date.parse(reminder.last_sent_at) !== Number(sentAt)) {
+        await interaction.reply({
+          content: "That reminder has changed; use the latest reminder message to snooze it.",
+          ephemeral: true,
+        });
+        return;
+      }
+      if (reminder.created_by !== interaction.user.id) {
+        await interaction.reply({
+          content: "Only the person who created this reminder can snooze it.",
+          ephemeral: true,
+        });
+        return;
+      }
       if (!reminder.snooze_enabled) {
         await interaction.reply({
           content: "Snoozing is disabled for this reminder.",
@@ -385,14 +399,32 @@ client.on("interactionCreate", async (interaction) => {
 
       const snoozedUntil = new Date(Date.now() + snoozeMinutes * 60 * 1000);
 
-      await db
+      const { results: updated } = await db
         .prepare(
           `UPDATE reminders
            SET next_eligible_at = ?, processing_token = NULL, processing_until = NULL
-           WHERE id = ?`,
+           WHERE id = ? AND created_by = ? AND enabled = 1 AND snooze_enabled = 1
+             AND last_sent_at = ? AND next_eligible_at = ?
+             AND (processing_until IS NULL OR processing_until <= ?)
+           RETURNING id`,
         )
-        .bind(snoozedUntil.toISOString(), reminderId)
-        .run();
+        .bind(
+          snoozedUntil.toISOString(),
+          reminderId,
+          interaction.user.id,
+          reminder.last_sent_at,
+          reminder.next_eligible_at,
+          new Date().toISOString(),
+        )
+        .all();
+
+      if (!updated.length) {
+        await interaction.reply({
+          content: "That reminder has changed; use the latest reminder message to snooze it.",
+          ephemeral: true,
+        });
+        return;
+      }
 
       await interaction.reply({
         content: `⏰ Snoozed for ${snoozeMinutes} minutes, until <t:${Math.floor(
@@ -612,7 +644,7 @@ async function processReminder(reminder, now) {
     } else {
       await sendReminderMessage(
         client,
-        reminder,
+        { ...reminder, last_sent_at: now.toISOString() },
         reminderNonce(reminder.id, dueAt),
       );
       lastSentAt = now.toISOString();

@@ -38,12 +38,16 @@ export async function sendReminderMessage(client, reminder, nonce) {
       ? [
           new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-              .setCustomId(`reminder:snooze:30m:${reminder.id}`)
+              .setCustomId(
+                `reminder:snooze:30m:${reminder.id}:${Date.parse(reminder.last_sent_at)}`,
+              )
               .setLabel("Snooze 30 Minutes")
               .setStyle(ButtonStyle.Secondary),
 
             new ButtonBuilder()
-              .setCustomId(`reminder:snooze:1h:${reminder.id}`)
+              .setCustomId(
+                `reminder:snooze:1h:${reminder.id}:${Date.parse(reminder.last_sent_at)}`,
+              )
               .setLabel("Snooze 1 Hour")
               .setStyle(ButtonStyle.Secondary),
           ),
