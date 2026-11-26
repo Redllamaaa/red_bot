@@ -463,9 +463,9 @@ export async function handleReactionRoleAddEvent(reaction, user) {
 
   const { results: groupRows } = await db
     .prepare(
-      `SELECT * FROM reaction_roles WHERE guild_id = ? AND group_name = ? AND id != ?`,
+      `SELECT * FROM reaction_roles WHERE guild_id = ? AND message_id = ? AND group_name = ? AND id != ?`,
     )
-    .bind(message.guildId, entry.group_name, entry.id)
+    .bind(message.guildId, message.id, entry.group_name, entry.id)
     .all();
 
   for (const row of groupRows) {
@@ -481,14 +481,7 @@ export async function handleReactionRoleAddEvent(reaction, user) {
     }
 
     try {
-      const otherMessage =
-        row.message_id === message.id
-          ? message
-          : await (
-              await guild.channels.fetch(row.channel_id)
-            ).messages.fetch(row.message_id);
-
-      const otherReaction = findCachedReaction(otherMessage, row.emoji_key);
+      const otherReaction = findCachedReaction(message, row.emoji_key);
       if (otherReaction) await otherReaction.users.remove(user.id);
     } catch (err) {
       console.error(
