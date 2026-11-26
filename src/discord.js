@@ -58,12 +58,13 @@ export async function sendReminderMessage(client, reminder, nonce) {
     ...(nonce ? { nonce, enforceNonce: true } : {}),
     content,
     allowedMentions,
+    ...(image ? { files: [image] } : {}),
     embeds: [
       {
         title: truncate(reminder.title, EMBED_LIMITS.TITLE),
         description: truncate(description, EMBED_LIMITS.DESCRIPTION),
         color: COLORS.REMINDER_SENT,
-        ...(image ? { image: { url: image } } : {}),
+        ...(image ? { image: { url: `attachment://${image.name}` } } : {}),
         footer: {
           text:
             reminder.type === "once"

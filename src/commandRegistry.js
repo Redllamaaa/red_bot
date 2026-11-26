@@ -1,4 +1,5 @@
 const FUN_API_TIMEOUT_MS = 8000;
+const MAX_ANIMAL_IMAGE_BYTES = 8 * 1024 * 1024;
 
 async function fetchJson(url, label) {
   const controller = new AbortController();
@@ -40,7 +41,45 @@ async function fetchAnimal(animal) {
   if (typeof data?.image !== "string" || typeof data?.fact !== "string") {
     throw new Error(`${animal} API returned an unexpected response shape`);
   }
-  return { text: data.fact, image: data.image };
+
+  const imageUrl = new URL(data.image);
+  if (imageUrl.protocol !== "https:" || imageUrl.hostname !== "i.imgur.com") {
+    throw new Error(`${animal} API returned an unsupported image URL`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FUN_API_TIMEOUT_MS);
+  try {
+    const response = await fetch(imageUrl, {
+      signal: controller.signal,
+      redirect: "error",
+    });
+    if (!response.ok) throw new Error(`${animal} image returned ${response.status}`);
+    const mime = response.headers.get("content-type")?.split(";")[0];
+    const extension = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/gif": "gif",
+      "image/webp": "webp",
+    }[mime];
+    const length = Number(response.headers.get("content-length"));
+    if (!extension || (length && length > MAX_ANIMAL_IMAGE_BYTES)) {
+      throw new Error(`${animal} image had an unsupported type or size`);
+    }
+    const attachment = Buffer.from(await response.arrayBuffer());
+    if (attachment.length > MAX_ANIMAL_IMAGE_BYTES) {
+      throw new Error(`${animal} image exceeded the size limit`);
+    }
+    return {
+      text: data.fact,
+      image: { attachment, name: `animal.${extension}` },
+    };
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(`${animal} image timed out`);
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export const commandRegistry = {

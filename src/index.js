@@ -78,7 +78,7 @@ function createEmbed({ title, description, color = COLORS.DEFAULT, image }) {
         title: truncate(title, EMBED_LIMITS.TITLE),
         description: truncate(description, EMBED_LIMITS.DESCRIPTION),
         color,
-        ...(image ? { image: { url: image } } : {}),
+        ...(image ? { image: { url: `attachment://${image.name}` } } : {}),
       },
     ],
   };
@@ -287,6 +287,7 @@ async function dispatchCommand(interaction) {
     typeof entry.title === "function" ? entry.title(interaction) : entry.title;
 
   await interaction.editReply({
+    ...(result.image ? { files: [result.image] } : {}),
     ...createEmbed({
       title: isError ? "Error" : title,
       description: result.success || result.error,
