@@ -13,7 +13,6 @@ const FUN_COMMAND_DESCRIPTIONS = {
   birb: "Get a random birb picture",
   panda: "Get a random panda picture",
   red_panda: "Get a random red panda picture",
-  pikachu: "Get a random Pikachu picture",
   raccoon: "Get a random raccoon picture",
   koala: "Get a random koala picture",
   kangaroo: "Get a random kangaroo picture",

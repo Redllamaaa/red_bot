@@ -32,15 +32,15 @@ async function fetchFunApi(endpoint) {
 
 // Returns { text, image } instead of a plain string; runFunCommand knows
 // how to handle both shapes.
-async function fetchAnimalImage(animal) {
+async function fetchAnimal(animal) {
   const data = await fetchJson(
-    `https://api.some-random-api.com/img/${animal}`,
+    `https://api.some-random-api.com/animal/${animal}`,
     animal,
   );
-  if (typeof data?.link !== "string") {
+  if (typeof data?.image !== "string" || typeof data?.fact !== "string") {
     throw new Error(`${animal} API returned an unexpected response shape`);
   }
-  return { text: `Here's a ${animal.replace("_", " ")} for you!`, image: data.link };
+  return { text: data.fact, image: data.image };
 }
 
 export const commandRegistry = {
@@ -50,18 +50,17 @@ export const commandRegistry = {
   pizzaidea: () => fetchFunApi("pizzaidea"),
   lifetruth: () => fetchFunApi("lifetruth"),
   thought: () => fetchFunApi("thought"),
-  fox: () => fetchAnimalImage("fox"),
-  cat: () => fetchAnimalImage("cat"),
-  birb: () => fetchAnimalImage("birb"),
-  panda: () => fetchAnimalImage("panda"),
-  red_panda: () => fetchAnimalImage("red_panda"),
-  pikachu: () => fetchAnimalImage("pikachu"),
-  raccoon: () => fetchAnimalImage("raccoon"),
-  koala: () => fetchAnimalImage("koala"),
-  kangaroo: () => fetchAnimalImage("kangaroo"),
-  whale: () => fetchAnimalImage("whale"),
-  dog: () => fetchAnimalImage("dog"),
-  bird: () => fetchAnimalImage("bird"),
+  fox: () => fetchAnimal("fox"),
+  cat: () => fetchAnimal("cat"),
+  birb: () => fetchAnimal("birb"),
+  panda: () => fetchAnimal("panda"),
+  red_panda: () => fetchAnimal("red_panda"),
+  raccoon: () => fetchAnimal("raccoon"),
+  koala: () => fetchAnimal("koala"),
+  kangaroo: () => fetchAnimal("kangaroo"),
+  whale: () => fetchAnimal("whale"),
+  dog: () => fetchAnimal("dog"),
+  bird: () => fetchAnimal("bird"),
 };
 
 export const commandChoices = Object.keys(commandRegistry).map((name) => ({

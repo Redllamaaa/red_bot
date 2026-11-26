@@ -226,7 +226,6 @@ const FUN_COMMAND_TITLES = {
   birb: "Random Birb Picture",
   panda: "Random Panda Picture",
   red_panda: "Random Red Panda Picture",
-  pikachu: "Random Pikachu Picture",
   raccoon: "Random Raccoon Picture",
   koala: "Random Koala Picture",
   kangaroo: "Random Kangaroo Picture",
