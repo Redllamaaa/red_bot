@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=.env src/index.js",
-    "register": "node register-commands.js"
+    "register": "node register-commands.js",
+    "test": "node --test"
   },
   "dependencies": {
     "discord.js": "^14.27.0"
