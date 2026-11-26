@@ -222,6 +222,17 @@ const FUN_COMMAND_TITLES = {
   lifetruth: "Life Truth",
   thought: "Thought",
   fox: "Random Fox Picture",
+  cat: "Random Cat Picture",
+  birb: "Random Birb Picture",
+  panda: "Random Panda Picture",
+  red_panda: "Random Red Panda Picture",
+  pikachu: "Random Pikachu Picture",
+  raccoon: "Random Raccoon Picture",
+  koala: "Random Koala Picture",
+  kangaroo: "Random Kangaroo Picture",
+  whale: "Random Whale Picture",
+  dog: "Random Dog Picture",
+  bird: "Random Bird Picture",
 };
 for (const name of Object.keys(commandRegistry)) {
   COMMAND_TABLE[name] = {

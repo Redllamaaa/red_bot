@@ -9,6 +9,17 @@ const FUN_COMMAND_DESCRIPTIONS = {
   lifetruth: "Get a random life truth",
   thought: "Get a random thought",
   fox: "Get a random fox picture",
+  cat: "Get a random cat picture",
+  birb: "Get a random birb picture",
+  panda: "Get a random panda picture",
+  red_panda: "Get a random red panda picture",
+  pikachu: "Get a random Pikachu picture",
+  raccoon: "Get a random raccoon picture",
+  koala: "Get a random koala picture",
+  kangaroo: "Get a random kangaroo picture",
+  whale: "Get a random whale picture",
+  dog: "Get a random dog picture",
+  bird: "Get a random bird picture",
 };
 
 function buildCommands() {
