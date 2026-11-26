@@ -41,6 +41,7 @@ import {
 } from "./reactionRoles.js";
 import { COLORS, EMBED_LIMITS } from "./utils/constants.js";
 import { truncate } from "./utils/utils.js";
+import { birthdayOccursOn, processBirthday } from "./birthdayProcessing.js";
 import { registerCommands } from "../register-commands.js";
 import { getLeaveChannel } from "./utils/guildSettings.js";
 
@@ -666,9 +667,9 @@ async function processReminder(reminder, now) {
 async function processDueBirthdays() {
   const now = new Date();
 
+  const year = now.getUTCFullYear();
   const month = now.getUTCMonth() + 1;
   const day = now.getUTCDate();
-  const year = now.getUTCFullYear();
 
   // Birthday reminders are only sent at 10:00 UTC.
   if (now.getUTCHours() !== 10) {
@@ -681,13 +682,12 @@ async function processDueBirthdays() {
         `SELECT *
          FROM birthdays
          WHERE enabled = 1
-           AND month = ?
-           AND day = ?
+           AND (month = ? AND day = ? OR (month = 2 AND day = 29 AND ? = 1))
            AND (last_sent_year IS NULL OR last_sent_year < ?)
          ORDER BY id ASC
          LIMIT 100`,
       )
-      .bind(month, day, year)
+      .bind(month, day, birthdayOccursOn(2, 29, now) ? 1 : 0, year)
       .all();
 
     if (!birthdays.length) {
@@ -697,36 +697,30 @@ async function processDueBirthdays() {
     await mapWithConcurrency(
       birthdays,
       REMINDER_PROCESSING_CONCURRENCY,
-      (birthday) => processBirthday(birthday, now, year),
+      (birthday) => processBirthdayForGuild(birthday, now, year),
     );
   } catch (err) {
     console.error("Error processing birthdays:", err);
   }
 }
 
-/**
- * Sends a single birthday message.
- *
- * The year is only marked as sent after Discord successfully accepts
- * the message. If Discord fails, the birthday remains eligible and
- * can be retried on the next scheduler tick.
- */
-async function processBirthday(birthday, now, year) {
-  try {
-    await sendBirthdayMessage(client, birthday);
-
-    await db
-      .prepare(
-        `UPDATE birthdays
-         SET last_sent_year = ?,
-             updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(year, now.toISOString(), birthday.id)
-      .run();
-  } catch (err) {
-    console.error(`Failed to send birthday ${birthday.id}:`, err.message);
-  }
+function processBirthdayForGuild(birthday, now, year) {
+  return processBirthday(
+    birthday,
+    now,
+    year,
+    (row) => sendBirthdayMessage(client, row),
+    (sentYear, updatedAt, id) =>
+      db
+        .prepare(
+          `UPDATE birthdays
+           SET last_sent_year = ?,
+               updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(sentYear, updatedAt, id)
+        .run(),
+  );
 }
 
 process.on("unhandledRejection", (reason) => {
