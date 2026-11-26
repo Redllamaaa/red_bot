@@ -86,7 +86,7 @@ function buildCommands() {
               type: 3,
               name: "every",
               description:
-                "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
+                "Schedule, e.g. random (1-24h), every week, every friday at 20, or 3h",
               required: true,
             },
             {
@@ -132,7 +132,7 @@ function buildCommands() {
               type: 3,
               name: "every",
               description:
-                "Schedule, e.g. every week, first monday each month, every friday at 20, or 3h",
+                "Schedule, e.g. random (1-24h), every week, every friday at 20, or 3h",
               required: true,
             },
             {

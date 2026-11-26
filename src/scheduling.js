@@ -590,6 +590,13 @@ export function nextWindowStart(reminder, now) {
  * land outside it).
  */
 export function computeNextEligible(reminder, now) {
+  if (reminder.schedule_text?.toLowerCase() === "random") {
+    const intervalMinutes = 60 + Math.floor(Math.random() * (24 * 60 - 60 + 1));
+    const candidate = new Date(now.getTime() + intervalMinutes * 60000);
+    return isWithinActiveWindow(reminder, candidate)
+      ? candidate
+      : nextWindowStart(reminder, candidate);
+  }
   const parsed = reminder.schedule_text
     ? parseNaturalSchedule(reminder.schedule_text)
     : null;

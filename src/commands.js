@@ -93,6 +93,27 @@ function appendTimezoneHint(result, isExplicit, timezone) {
 
 function parseRepeatingScheduleOptions(opts) {
   const scheduleText = String(opts.every || "").trim();
+  if (/^random$/i.test(scheduleText)) {
+    let activeStart = null;
+    let activeEnd = null;
+    if (opts.active) {
+      const parsed = parseActiveHours(opts.active);
+      if (!parsed)
+        return {
+          error:
+            "Couldn't parse the active-hours window. Try something like `8-24`, `8am-12am`, or `22-6`.",
+        };
+      activeStart = parsed.start;
+      activeEnd = parsed.end;
+    }
+    return {
+      scheduleText: "random",
+      parsedSchedule: null,
+      intervalMinutes: null,
+      activeStart,
+      activeEnd,
+    };
+  }
   const parsedSchedule = parseNaturalSchedule(scheduleText);
   const intervalMinutes =
     parsedSchedule && parsedSchedule.kind === "interval"
@@ -159,7 +180,8 @@ async function insertRepeatingReminder(
     active_hours_start: activeStart,
     active_hours_end: activeEnd,
     timezone,
-    schedule_text: parsedSchedule ? scheduleText : null,
+    schedule_text:
+      parsedSchedule || scheduleText === "random" ? scheduleText : null,
     interval_minutes: intervalMinutes,
   };
   const nextEligible = isWithinActiveWindow(draftReminder, now)
@@ -184,7 +206,7 @@ async function insertRepeatingReminder(
       payload.commandName || null,
       payload.role || null,
       intervalMinutes,
-      parsedSchedule ? scheduleText : null,
+      parsedSchedule || scheduleText === "random" ? scheduleText : null,
       activeStart,
       activeEnd,
       timezone,

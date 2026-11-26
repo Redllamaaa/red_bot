@@ -150,7 +150,7 @@ function buildDetailsModal(type, sessionId) {
         TextInputStyle.Short,
         true,
         null,
-        "e.g. every week, every friday at 20, 3h",
+        "e.g. random (1-24h), every week, every friday at 20, 3h",
       ),
     );
     rows.push(
@@ -182,7 +182,7 @@ function buildDetailsModal(type, sessionId) {
         TextInputStyle.Short,
         true,
         null,
-        "e.g. every week, every friday at 20, 3h",
+        "e.g. random (1-24h), every week, every friday at 20, 3h",
       ),
     );
     rows.push(

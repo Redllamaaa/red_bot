@@ -6,8 +6,10 @@ export function birthdayOccursOn(month, day, now) {
     todayDay === 28 &&
     new Date(Date.UTC(now.getUTCFullYear(), 1, 29)).getUTCMonth() !== 1;
 
-  return (month === todayMonth && day === todayDay) ||
-    (leapDayFallback && month === 2 && day === 29);
+  return (
+    (month === todayMonth && day === todayDay) ||
+    (leapDayFallback && month === 2 && day === 29)
+  );
 }
 
 export async function processBirthday(birthday, now, year, send, markSent) {
