@@ -221,17 +221,17 @@ const FUN_COMMAND_TITLES = {
   pizzaidea: "Pizza Idea",
   lifetruth: "Life Truth",
   thought: "Thought",
-  fox: "Random Fox Picture",
-  cat: "Random Cat Picture",
-  birb: "Random Birb Picture",
-  panda: "Random Panda Picture",
-  red_panda: "Random Red Panda Picture",
-  raccoon: "Random Raccoon Picture",
-  koala: "Random Koala Picture",
-  kangaroo: "Random Kangaroo Picture",
-  whale: "Random Whale Picture",
-  dog: "Random Dog Picture",
-  bird: "Random Bird Picture",
+  fox: "Random Fox Picture & Fact",
+  cat: "Random Cat Picture & Fact",
+  birb: "Random Birb Picture & Fact",
+  panda: "Random Panda Picture & Fact",
+  red_panda: "Random Red Panda Picture & Fact",
+  raccoon: "Random Raccoon Picture & Fact",
+  koala: "Random Koala Picture & Fact",
+  kangaroo: "Random Kangaroo Picture & Fact",
+  whale: "Random Whale Picture & Fact",
+  dog: "Random Dog Picture & Fact",
+  bird: "Random Bird Picture & Fact",
 };
 for (const name of Object.keys(commandRegistry)) {
   COMMAND_TABLE[name] = {
@@ -388,7 +388,8 @@ client.on("interactionCreate", async (interaction) => {
       }
       if (Date.parse(reminder.last_sent_at) !== Number(sentAt)) {
         await interaction.reply({
-          content: "That reminder has changed; use the latest reminder message to snooze it.",
+          content:
+            "That reminder has changed; use the latest reminder message to snooze it.",
           ephemeral: true,
         });
         return;
@@ -431,7 +432,8 @@ client.on("interactionCreate", async (interaction) => {
 
       if (!updated.length) {
         await interaction.reply({
-          content: "That reminder has changed; use the latest reminder message to snooze it.",
+          content:
+            "That reminder has changed; use the latest reminder message to snooze it.",
           ephemeral: true,
         });
         return;
@@ -640,7 +642,9 @@ async function processDueReminders() {
           ],
         })),
       );
-      const claimed = batch.filter((_, index) => claims[index]?.results?.length);
+      const claimed = batch.filter(
+        (_, index) => claims[index]?.results?.length,
+      );
       claimedCount += claimed.length;
 
       const updates = (
