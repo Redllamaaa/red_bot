@@ -550,6 +550,7 @@ client.on("guildMemberRemove", async (member) => {
  */
 async function mapWithConcurrency(items, limit, worker) {
   const queue = [...items];
+  const results = [];
 
   const runners = Array.from(
     { length: Math.min(limit, items.length) },
@@ -558,7 +559,7 @@ async function mapWithConcurrency(items, limit, worker) {
         const item = queue.shift();
 
         try {
-          await worker(item);
+          results.push(await worker(item));
         } catch (err) {
           console.error("Background item failed:", err);
         }
@@ -567,6 +568,7 @@ async function mapWithConcurrency(items, limit, worker) {
   );
 
   await Promise.all(runners);
+  return results;
 }
 
 const REMINDER_PROCESSING_CONCURRENCY = 8;
@@ -584,11 +586,16 @@ function reminderNonce(reminderId, dueAt) {
  */
 async function processDueReminders() {
   const now = new Date();
+  const startedAt = Date.now();
 
   try {
+    const queryStartedAt = Date.now();
     const { results: due } = await db
       .prepare(
-        `SELECT *
+        `SELECT id, channel_id, created_by, type, title, message, ping_role_id,
+                interval_minutes, schedule_text, active_hours_start, active_hours_end,
+                timezone, command_name, snooze_enabled, monthly_anchor_day,
+                last_sent_at, next_eligible_at, processing_until, enabled
          FROM reminders
          WHERE enabled = 1
            AND next_eligible_at <= ?
@@ -598,10 +605,49 @@ async function processDueReminders() {
       )
       .bind(now.toISOString(), now.toISOString())
       .all();
+    const queryMs = Date.now() - queryStartedAt;
 
-    await mapWithConcurrency(due, REMINDER_PROCESSING_CONCURRENCY, (reminder) =>
-      processReminder(reminder, now),
-    );
+    let claimedCount = 0;
+    for (let i = 0; i < due.length; i += REMINDER_PROCESSING_CONCURRENCY) {
+      const batch = due
+        .slice(i, i + REMINDER_PROCESSING_CONCURRENCY)
+        .map((reminder) => ({ reminder, token: crypto.randomUUID() }));
+      const claimTime = new Date();
+      const claims = await db.batch(
+        batch.map(({ reminder, token }) => ({
+          sql: `UPDATE reminders
+                SET processing_token = ?, processing_until = ?
+                WHERE id = ? AND enabled = 1 AND next_eligible_at = ?
+                  AND (processing_until IS NULL OR processing_until <= ?)
+                RETURNING id`,
+          params: [
+            token,
+            new Date(claimTime.getTime() + REMINDER_CLAIM_MS).toISOString(),
+            reminder.id,
+            reminder.next_eligible_at,
+            claimTime.toISOString(),
+          ],
+        })),
+      );
+      const claimed = batch.filter((_, index) => claims[index]?.results?.length);
+      claimedCount += claimed.length;
+
+      const updates = (
+        await mapWithConcurrency(
+          claimed,
+          REMINDER_PROCESSING_CONCURRENCY,
+          ({ reminder, token }) => processReminder(reminder, now, token),
+        )
+      ).filter(Boolean);
+      if (updates.length) await db.batch(updates);
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    if (queryMs >= 2000 || elapsedMs >= 10000 || due.length === 100) {
+      console.info(
+        `Reminder pass: ${due.length} due, ${claimedCount} claimed, D1 query ${queryMs}ms, total ${elapsedMs}ms${due.length === 100 ? ", batch limit reached" : ""}`,
+      );
+    }
   } catch (err) {
     console.error("Error processing due reminders:", err);
   }
@@ -610,31 +656,10 @@ async function processDueReminders() {
 /**
  * Sends (or reschedules) a single due reminder.
  */
-async function processReminder(reminder, now) {
+async function processReminder(reminder, now, claimToken) {
   const dueAt = reminder.next_eligible_at;
-  const claimToken = crypto.randomUUID();
-  const claimNow = new Date();
 
   try {
-    const { results: claimed } = await db
-      .prepare(
-        `UPDATE reminders
-         SET processing_token = ?, processing_until = ?
-         WHERE id = ? AND enabled = 1 AND next_eligible_at = ?
-           AND (processing_until IS NULL OR processing_until <= ?)
-         RETURNING id`,
-      )
-      .bind(
-        claimToken,
-        new Date(claimNow.getTime() + REMINDER_CLAIM_MS).toISOString(),
-        reminder.id,
-        dueAt,
-        claimNow.toISOString(),
-      )
-      .all();
-
-    if (!claimed.length) return;
-
     let nextEligible;
     let lastSentAt = reminder.last_sent_at;
     let enabled = reminder.enabled;
@@ -664,21 +689,19 @@ async function processReminder(reminder, now) {
       }
     }
 
-    await db
-      .prepare(
-        `UPDATE reminders
-         SET last_sent_at = ?, next_eligible_at = ?, enabled = ?,
-             processing_token = NULL, processing_until = NULL
-         WHERE id = ? AND enabled = 1 AND processing_token = ?`,
-      )
-      .bind(
+    return {
+      sql: `UPDATE reminders
+            SET last_sent_at = ?, next_eligible_at = ?, enabled = ?,
+                processing_token = NULL, processing_until = NULL
+            WHERE id = ? AND enabled = 1 AND processing_token = ?`,
+      params: [
         lastSentAt,
         nextEligible.toISOString(),
         enabled,
         reminder.id,
         claimToken,
-      )
-      .run();
+      ],
+    };
   } catch (err) {
     console.error(`Failed to process reminder ${reminder.id}:`, err.message);
   }

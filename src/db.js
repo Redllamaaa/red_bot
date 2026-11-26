@@ -31,7 +31,9 @@ async function queryD1(sql, params = []) {
             Authorization: `Bearer ${API_TOKEN}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ sql, params }),
+          body: JSON.stringify(
+            Array.isArray(sql) ? { batch: sql } : { sql, params },
+          ),
           signal: controller.signal,
         },
       );
@@ -58,7 +60,7 @@ async function queryD1(sql, params = []) {
         throw new Error(data.errors?.[0]?.message || "D1 Query Failed");
       }
 
-      return data.result[0];
+      return Array.isArray(sql) ? data.result : data.result[0];
     } catch (err) {
       const isTimeout = err.name === "AbortError";
       const isNetworkError = isTransientNetworkError(err);
@@ -98,6 +100,9 @@ async function queryD1(sql, params = []) {
 }
 
 export const db = {
+  async batch(statements) {
+    return await queryD1(statements);
+  },
   prepare(sql) {
     return {
       bind(...params) {
